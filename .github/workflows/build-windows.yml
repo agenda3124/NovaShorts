@@ -65,9 +65,15 @@ jobs:
               assert lab.isVisible() and ctl.isVisible()
               assert not lab.geometry().intersects(ctl.geometry())
               assert ctl.text() in ('ON', 'OFF')
+          w.go(7)
+          app.processEvents()
           assert len(w.setting_pairs) == 8
           for lab, ctl in w.setting_pairs:
+              assert lab.isVisible() and ctl.isVisible()
+              assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
+          w.go(0)
+          app.processEvents()
           assert w.findChild(QFrame, 'heroV112') is None
           print('ui-geometry-ok', w.windowTitle(), sidebar.width())
           w.close()
@@ -114,11 +120,12 @@ jobs:
           NovaShorts v1.14
           1. 좌측 메뉴 폭을 줄여 본문 작업 공간을 넓혔습니다.
           2. 버전은 NovaShorts 제목 아래 작은 별도 줄로 배치해 잘리지 않게 했습니다.
-          3. 빠른 설정은 라벨/선택박스를 같은 행의 독립 컬럼으로 배치해 글자와 콤보박스가 절대 겹치지 않도록 수정했습니다.
+          3. 빠른 설정은 라벨/선택박스를 같은 행의 독립 컬럼으로 배치해 글자와 콤보박스가 겹치지 않도록 수정했습니다.
           4. 자막 제거/자동 컷/워터마크/업로드 후 링크 생성은 ON/OFF 단추형 토글을 유지합니다.
-          5. 설정 화면도 라벨/입력 필드를 고정 컬럼으로 재배치하고 작은 화면에서는 세로 스크롤되도록 했습니다.
-          6. 빌드 전에 실제 1600x930 UI geometry 검사로 라벨/컨트롤 교차 여부를 자동 검증합니다.
-          7. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 소싱 기능과 플랫폼 아이콘 UI는 유지합니다.
+          5. 설정 화면도 각 입력 항목을 독립 행 컨테이너로 만들어 라벨과 입력창이 겹치지 않도록 했습니다.
+          6. 작은 화면에서는 설정 화면이 세로 스크롤되며 항목이 잘리지 않습니다.
+          7. 빌드 전에 실제 1600x930 UI geometry 검사로 빠른 설정/설정 화면의 겹침 여부를 자동 검증합니다.
+          8. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 소싱 기능과 플랫폼 아이콘 UI는 유지합니다.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
