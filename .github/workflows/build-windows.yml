@@ -34,73 +34,74 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py
-          python -c "import main_v117, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py
+          python -c "import main_v118, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
 
-      - name: UI spacing and clipping smoke test
+      - name: Responsive UI clipping smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           @'
           from PySide6.QtCore import QPoint, QRect
-          from PySide6.QtWidgets import QApplication, QFrame, QToolButton
-          import main_v117
+          from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
+          import main_v118
 
           app = QApplication([])
-          w = main_v117.Nova()
-          w.resize(1600, 930)
+          w = main_v118.Nova()
           w.show()
           app.processEvents()
+
           assert w.pages.count() == 8
-          assert 'v1.17' in w.windowTitle()
-          assert 'v1.17' in w.status.text()
+          assert 'v1.18' in w.windowTitle()
+          assert 'v1.18' in w.status.text()
+          assert hasattr(w, 'right_scroll118')
+          assert isinstance(w.right_scroll118, QScrollArea)
+          assert len(w.quick_field_pairs) == 3
+          assert len(w.quick_toggle_pairs) == 4
 
           def rect_in(parent, child):
               p = child.mapTo(parent, QPoint(0, 0))
               return QRect(p, child.size())
 
-          quick = w.findChild(QFrame, 'quickCard117')
-          assert quick is not None
-          assert quick.height() >= 374
-          assert len(w.quick_field_pairs) == 3
-          assert len(w.quick_toggle_pairs) == 4
-          for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
-              assert lab.isVisible() and ctl.isVisible()
-              assert not lab.geometry().intersects(ctl.geometry())
-              assert quick.rect().contains(rect_in(quick, lab))
-              assert quick.rect().contains(rect_in(quick, ctl))
-          assert all(x.text() in ('ON','OFF') for _,x in w.quick_toggle_pairs)
-          assert 'QWidget[quickRow117="true"]' in w.styleSheet()
+          def check_quick():
+              quick = w.findChild(QFrame, 'quickCard118')
+              assert quick is not None
+              assert quick.height() >= 370
+              for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
+                  assert lab.isVisible() and ctl.isVisible()
+                  assert not lab.geometry().intersects(ctl.geometry())
+                  assert quick.rect().contains(rect_in(quick, lab))
+                  assert quick.rect().contains(rect_in(quick, ctl))
 
-          w.go(1)
+          # Desktop logical size.
+          w.resize(1600, 930)
           app.processEvents()
-          product_card = w.findChild(QFrame, 'sourceSection117')
-          platform_card = w.findChild(QFrame, 'platformSection117')
-          assert product_card is not None and platform_card is not None
-          assert product_card.height() >= 166
-          pr = rect_in(product_card, w.product)
-          ur = rect_in(product_card, w.product_url)
-          assert ur.top() - pr.bottom() >= 8
-          assert product_card.rect().contains(pr)
-          assert product_card.rect().contains(ur)
-          assert w.product.height() == 42
-          assert w.product_url.height() == 42
-          assert product_card.rect().contains(rect_in(product_card, w.source_row_product))
-          assert product_card.rect().contains(rect_in(product_card, w.source_row_url))
-          chips = platform_card.findChildren(QToolButton)
-          assert len(chips) == 7
-          for chip in chips:
-              assert platform_card.rect().contains(rect_in(platform_card, chip))
-              assert chip.height() >= 32
+          check_quick()
+          assert w.right_scroll118.width() >= 350
 
+          # Laptop / high-DPI logical size. Right side may scroll, but must never clip controls.
+          w.resize(1280, 720)
+          app.processEvents()
+          check_quick()
+          assert w.right_scroll118.width() <= 320
+          assert w.queue_group118.height() <= 145
+
+          # Settings inputs must be card rows with no black label slabs/overlap.
           w.go(7)
           app.processEvents()
+          assert len(w.setting_pairs) == 8
           for lab, ctl in w.setting_pairs:
               assert lab.isVisible() and ctl.isVisible()
               assert not lab.geometry().intersects(ctl.geometry())
+              parent = lab.parentWidget()
+              assert parent is ctl.parentWidget()
+              assert parent.rect().contains(rect_in(parent, lab))
+              assert parent.rect().contains(rect_in(parent, ctl))
+          css = w.styleSheet()
+          assert 'settingRow118' in css and 'quickRow118' in css
 
-          print('ui-v117-ok')
+          print('ui-v118-responsive-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -124,7 +125,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v117.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v118.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -143,12 +144,11 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.17
-          - 빠른 설정 카드 높이를 넉넉하게 늘리고 DPI 배율에서도 마지막 행이 잘리지 않게 변경했습니다.
-          - AI 모델/TTS/해상도/토글 행 배경을 전체 디자인과 맞는 네이비 카드형 스타일로 통일했습니다.
-          - 상품명과 쿠팡/상품 URL을 고정 높이의 독립 행 위젯으로 분리했습니다.
-          - 상품 입력 카드 높이와 내부 여백을 확대해 입력칸 하단 테두리 잘림을 방지했습니다.
-          - 플랫폼 버튼 카드 여백을 확대하고 모든 버튼이 카드 안에 들어오는지 검사합니다.
+          NovaShorts v1.18
+          - 빠른 설정 전체를 세로 스크롤 대응형으로 변경해 노트북/데스크탑과 Windows 배율에서도 마지막 ON/OFF 행이 잘리지 않습니다.
+          - 1600x930과 1280x720 논리 해상도에 맞춰 오른쪽 패널/왼쪽 메뉴/작업 대기열 폭과 높이를 자동 조절합니다.
+          - 설정의 출력 폴더/API 키/연동 입력 행을 빠른 설정과 같은 네이비 카드 디자인으로 통일해 검은 배경 띠를 제거했습니다.
+          - 설정 화면은 세로 스크롤을 사용해 작은 화면에서도 입력 항목이 겹치지 않습니다.
           - 자세한 기능 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
@@ -165,13 +165,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.17.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.17.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.18.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.18.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.17
-          path: NovaShorts_v1.17.zip
+          name: NovaShorts_v1.18
+          path: NovaShorts_v1.18.zip
           if-no-files-found: error
           retention-days: 30
