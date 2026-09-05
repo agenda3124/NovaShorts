@@ -34,7 +34,7 @@ jobs:
       - name: Syntax check
         shell: pwsh
         run: |
-          python -m py_compile engine.py bridge.py features.py main_v18.py main_v19.py
+          python -m py_compile engine.py bridge.py features.py main_v18.py main_v19.py main_v110.py
 
       - name: Install FFmpeg and Tesseract
         shell: pwsh
@@ -55,7 +55,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork main_v19.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork main_v110.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -72,13 +72,14 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.9
+          NovaShorts v1.10
           1. NovaShorts.exe 또는 START_NovaShorts.bat 실행
-          2. 홈 상단 배너를 제거해 소싱 결과와 작업 영역이 잘리지 않도록 수정했습니다.
-          3. 설정/빠른설정/미리보기/작업대기열 레이아웃을 압축하고 텍스트 여유폭을 늘렸습니다.
-          4. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
-          5. browser-extension 폴더는 Chrome/Edge 개발자 모드에서 '압축해제된 확장 프로그램 로드'로 추가합니다.
-          6. %USERPROFILE%\.novashorts\settings.json 의 bridge_token 값을 확장 프로그램에 입력합니다.
+          2. 좌측 메뉴에 카드형 테두리, hover, 선택 포인트를 적용했습니다.
+          3. TikTok/Douyin/Xiaohongshu/Kuaishou/1688 선택을 아이콘 카드형 UI로 변경했습니다.
+          4. 홈 결과 카드와 스크롤바, 설정/빠른 설정의 정렬을 추가로 다듬었습니다.
+          5. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
+          6. browser-extension 폴더는 Chrome/Edge 개발자 모드에서 '압축해제된 확장 프로그램 로드'로 추가합니다.
+          7. %USERPROFILE%\.novashorts\settings.json 의 bridge_token 값을 확장 프로그램에 입력합니다.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -94,13 +95,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.9.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.9.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.10.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.10.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.9
-          path: NovaShorts_v1.9.zip
+          name: NovaShorts_v1.10
+          path: NovaShorts_v1.10.zip
           if-no-files-found: error
           retention-days: 30
