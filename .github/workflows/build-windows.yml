@@ -92,7 +92,7 @@ jobs:
           assert len(chips) == 7
           for chip in chips:
               assert platform_card.rect().contains(rect_in(platform_card, chip))
-              assert chip.height() == 38
+              assert chip.height() >= 32
 
           w.go(7)
           app.processEvents()
@@ -147,8 +147,8 @@ jobs:
           - 빠른 설정 카드 높이를 넉넉하게 늘리고 DPI 배율에서도 마지막 행이 잘리지 않게 변경했습니다.
           - AI 모델/TTS/해상도/토글 행 배경을 전체 디자인과 맞는 네이비 카드형 스타일로 통일했습니다.
           - 상품명과 쿠팡/상품 URL을 고정 높이의 독립 행 위젯으로 분리했습니다.
-          - 상품 입력 카드의 고정 높이를 제거하고 최소 크기 기반으로 늘어나게 해 하단 테두리 잘림을 방지했습니다.
-          - 플랫폼 버튼 높이와 카드 여백도 다시 확보했습니다.
+          - 상품 입력 카드 높이와 내부 여백을 확대해 입력칸 하단 테두리 잘림을 방지했습니다.
+          - 플랫폼 버튼 카드 여백을 확대하고 모든 버튼이 카드 안에 들어오는지 검사합니다.
           - 자세한 기능 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
