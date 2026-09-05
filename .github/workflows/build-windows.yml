@@ -34,15 +34,45 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py
-          python -c "import main_v113, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py
+          python -c "import main_v114, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
 
-      - name: UI construction smoke test
+      - name: UI geometry smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "from PySide6.QtWidgets import QApplication,QFrame; import main_v113; app=QApplication([]); w=main_v113.Nova(); assert w.pages.count()==8; assert len(w.home_checks)==7; assert hasattr(w,'quick_link'); assert w.quick_ocr.text()=='ON'; assert w.quick_cut.text()=='ON'; assert w.quick_wm.text() in ('ON','OFF'); assert w.quick_link.text() in ('ON','OFF'); assert w.findChild(QFrame,'heroV112') is None; assert w.width()>=1260; print('ui-ok',w.windowTitle(),w.quick_ocr.text(),w.quick_cut.text()); w.close()"
+          @'
+          from PySide6.QtWidgets import QApplication, QFrame, QLabel
+          import main_v114
+          app = QApplication([])
+          w = main_v114.Nova()
+          w.resize(1600, 930)
+          w.show()
+          app.processEvents()
+          assert w.pages.count() == 8
+          sidebar = w.findChild(QFrame, 'sidebar')
+          assert sidebar is not None and sidebar.width() == 220
+          ver = w.findChild(QLabel, 'version114')
+          assert ver is not None and ver.text() == 'Version 1.14'
+          assert len(w.quick_field_pairs) == 3
+          assert len(w.quick_toggle_pairs) == 4
+          for lab, ctl in w.quick_field_pairs:
+              assert lab.isVisible() and ctl.isVisible()
+              assert not lab.geometry().intersects(ctl.geometry())
+              assert lab.height() >= 30 and ctl.height() >= 30
+          for lab, ctl in w.quick_toggle_pairs:
+              assert lab.isVisible() and ctl.isVisible()
+              assert not lab.geometry().intersects(ctl.geometry())
+              assert ctl.text() in ('ON', 'OFF')
+          assert len(w.setting_pairs) == 8
+          for lab, ctl in w.setting_pairs:
+              assert not lab.geometry().intersects(ctl.geometry())
+          assert w.findChild(QFrame, 'heroV112') is None
+          print('ui-geometry-ok', w.windowTitle(), sidebar.width())
+          w.close()
+          '@ | Set-Content .\ui_test.py -Encoding UTF8
+          python .\ui_test.py
 
       - name: Install FFmpeg and Tesseract
         shell: pwsh
@@ -63,7 +93,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v113.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v114.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -81,15 +111,14 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.13
-          1. NovaShorts.exe 또는 START_NovaShorts.bat 실행
-          2. 홈의 대형 배너를 제거해 소싱 결과와 작업 영역이 아래로 밀리지 않도록 수정했습니다.
-          3. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 플랫폼 아이콘+이름 UI는 유지합니다.
-          4. 빠른 설정의 AI 모델/TTS/해상도 라벨과 콤보박스를 고정 높이로 분리해 겹침과 잘림을 방지했습니다.
-          5. 자막 제거/자동 컷/워터마크/업로드 후 링크 생성은 ON/OFF 단추 방식으로 변경했습니다.
-          6. 설정 화면을 컴팩트한 스크롤 안전 레이아웃으로 재구성해 1600x930에서 모든 항목이 겹치지 않도록 수정했습니다.
-          7. 좌측 메뉴 hover/active 테두리와 포인트를 강화했습니다.
-          8. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
+          NovaShorts v1.14
+          1. 좌측 메뉴 폭을 줄여 본문 작업 공간을 넓혔습니다.
+          2. 버전은 NovaShorts 제목 아래 작은 별도 줄로 배치해 잘리지 않게 했습니다.
+          3. 빠른 설정은 라벨/선택박스를 같은 행의 독립 컬럼으로 배치해 글자와 콤보박스가 절대 겹치지 않도록 수정했습니다.
+          4. 자막 제거/자동 컷/워터마크/업로드 후 링크 생성은 ON/OFF 단추형 토글을 유지합니다.
+          5. 설정 화면도 라벨/입력 필드를 고정 컬럼으로 재배치하고 작은 화면에서는 세로 스크롤되도록 했습니다.
+          6. 빌드 전에 실제 1600x930 UI geometry 검사로 라벨/컨트롤 교차 여부를 자동 검증합니다.
+          7. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 소싱 기능과 플랫폼 아이콘 UI는 유지합니다.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -106,13 +135,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.13.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.13.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.14.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.14.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.13
-          path: NovaShorts_v1.13.zip
+          name: NovaShorts_v1.14
+          path: NovaShorts_v1.14.zip
           if-no-files-found: error
           retention-days: 30
