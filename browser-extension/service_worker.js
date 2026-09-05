@@ -7,10 +7,12 @@ async function api(path,options={}){
   return fetch(API+path,Object.assign({},options,{headers})).then(r=>r.json());
 }
 function platformRegex(platform){
+  if(platform==='TikTok')return /tiktok\.com\/@[^/]+\/video\//i;
+  if(platform==='YouTube')return /youtube\.com\/(watch\?v=|shorts\/)/i;
+  if(platform==='Instagram')return /instagram\.com\/(reel|reels|p)\//i;
   if(platform==='Douyin')return /douyin\.com\/video\//i;
   if(platform==='Xiaohongshu')return /xiaohongshu\.com\/(explore|discovery\/item)\//i;
   if(platform==='Kuaishou')return /kuaishou\.com\/(short-video|f)\//i;
-  if(platform==='TikTok')return /tiktok\.com\/@[^/]+\/video\//i;
   return /1688\.com\/offer\//i;
 }
 async function collect(task){
