@@ -91,8 +91,8 @@ QPushButton[sourceAction117="true"]{
 }
 QPushButton[sourceAction117="true"]:hover{background:#4c70ff}
 QToolButton[platform="true"]{
-    min-height:36px;
-    max-height:36px;
+    min-height:38px;
+    max-height:38px;
     padding:4px 10px;
 }
 '''
