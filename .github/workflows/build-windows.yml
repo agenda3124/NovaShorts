@@ -34,7 +34,7 @@ jobs:
       - name: Syntax check
         shell: pwsh
         run: |
-          python -m py_compile engine.py bridge.py features.py main.py
+          python -m py_compile engine.py bridge.py features.py main_v18.py
 
       - name: Install FFmpeg and Tesseract
         shell: pwsh
@@ -55,7 +55,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets main.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork main_v18.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -72,7 +72,7 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.7
+          NovaShorts v1.8
           1. NovaShorts.exe 또는 START_NovaShorts.bat 실행
           2. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
           3. browser-extension 폴더는 Chrome/Edge 개발자 모드에서 '압축해제된 확장 프로그램 로드'로 추가합니다.
@@ -93,13 +93,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.7.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.7.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.8.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.8.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.7
-          path: NovaShorts_v1.7.zip
+          name: NovaShorts_v1.8
+          path: NovaShorts_v1.8.zip
           if-no-files-found: error
           retention-days: 30
