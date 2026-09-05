@@ -29,18 +29,18 @@ QLabel#sourceSectionTitle116{
     font-weight:800;
 }
 QLineEdit[source116="true"]{
-    min-height:36px;
-    max-height:36px;
-    padding:5px 10px;
+    min-height:34px;
+    max-height:34px;
+    padding:4px 10px;
 }
 QPushButton[sourceAction116="true"]{
-    min-height:36px;
-    max-height:36px;
+    min-height:34px;
+    max-height:34px;
     min-width:170px;
 }
 QToolButton[platform="true"]{
     min-height:32px;
-    max-height:32px;
+    max-height:34px;
     padding:4px 9px;
 }
 QFrame#quickCard116,QFrame#previewCard116{
@@ -200,6 +200,16 @@ class Nova(base.Nova):
         lab.setFixedHeight(20)
         return lab
 
+    def _source_input_row(self, edit, button):
+        row = QWidget()
+        row.setFixedHeight(42)
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 2, 0, 2)
+        h.setSpacing(12)
+        h.addWidget(edit, 1)
+        h.addWidget(button)
+        return row
+
     def source_page(self):
         w = QWidget()
         v = QVBoxLayout(w)
@@ -213,7 +223,7 @@ class Nova(base.Nova):
 
         product_card = QFrame()
         product_card.setObjectName('sourceSection116')
-        product_card.setFixedHeight(132)
+        product_card.setFixedHeight(154)
         pv = QVBoxLayout(product_card)
         pv.setContentsMargins(14, 10, 14, 12)
         pv.setSpacing(8)
@@ -233,39 +243,34 @@ class Nova(base.Nova):
         b2.setProperty('sourceAction116', True)
         b2.clicked.connect(self.coupang_lookup)
 
-        r1 = QHBoxLayout()
-        r1.setSpacing(12)
-        r1.addWidget(self.product, 1)
-        r1.addWidget(b1)
-        pv.addLayout(r1)
-
-        r2 = QHBoxLayout()
-        r2.setSpacing(12)
-        r2.addWidget(self.product_url, 1)
-        r2.addWidget(b2)
-        pv.addLayout(r2)
+        row1 = self._source_input_row(self.product, b1)
+        row2 = self._source_input_row(self.product_url, b2)
+        pv.addWidget(row1)
+        pv.addWidget(row2)
         v.addWidget(product_card)
 
         platform_card = QFrame()
         platform_card.setObjectName('platformSection116')
-        platform_card.setFixedHeight(88)
+        platform_card.setFixedHeight(100)
         pvl = QVBoxLayout(platform_card)
-        pvl.setContentsMargins(14, 9, 14, 10)
+        pvl.setContentsMargins(14, 9, 14, 11)
         pvl.setSpacing(7)
         pvl.addWidget(self._section_title('플랫폼'))
-        chips = QHBoxLayout()
-        chips.setContentsMargins(0, 0, 0, 0)
+        chip_row = QWidget()
+        chip_row.setFixedHeight(42)
+        chips = QHBoxLayout(chip_row)
+        chips.setContentsMargins(0, 3, 0, 3)
         chips.setSpacing(7)
         self.pchecks = {}
         selected_now = set(getattr(self.s, 'platform_sources', []) or [])
         for p in PLATFORM_ORDER:
             btn = platform_chip(p, p in selected_now, True)
             btn.setMinimumWidth(82)
-            btn.setMaximumHeight(36)
+            btn.setMaximumHeight(34)
             self.pchecks[p] = btn
             chips.addWidget(btn)
         chips.addStretch()
-        pvl.addLayout(chips)
+        pvl.addWidget(chip_row)
         v.addWidget(platform_card)
 
         split = QSplitter(Qt.Horizontal)
