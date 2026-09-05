@@ -34,8 +34,8 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py
-          python -c "import main_v116, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py
+          python -c "import main_v117, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
 
       - name: UI spacing and clipping smoke test
         shell: pwsh
@@ -45,23 +45,24 @@ jobs:
           @'
           from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QToolButton
-          import main_v116
+          import main_v117
 
           app = QApplication([])
-          w = main_v116.Nova()
+          w = main_v117.Nova()
           w.resize(1600, 930)
           w.show()
           app.processEvents()
           assert w.pages.count() == 8
-          assert 'v1.16' in w.windowTitle()
-          assert 'v1.16' in w.status.text()
+          assert 'v1.17' in w.windowTitle()
+          assert 'v1.17' in w.status.text()
 
           def rect_in(parent, child):
               p = child.mapTo(parent, QPoint(0, 0))
               return QRect(p, child.size())
 
-          quick = w.findChild(QFrame, 'quickCard116')
+          quick = w.findChild(QFrame, 'quickCard117')
           assert quick is not None
+          assert quick.height() >= 374
           assert len(w.quick_field_pairs) == 3
           assert len(w.quick_toggle_pairs) == 4
           for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
@@ -70,21 +71,28 @@ jobs:
               assert quick.rect().contains(rect_in(quick, lab))
               assert quick.rect().contains(rect_in(quick, ctl))
           assert all(x.text() in ('ON','OFF') for _,x in w.quick_toggle_pairs)
+          assert 'QWidget[quickRow117="true"]' in w.styleSheet()
 
           w.go(1)
           app.processEvents()
-          product_card = w.findChild(QFrame, 'sourceSection116')
-          platform_card = w.findChild(QFrame, 'platformSection116')
+          product_card = w.findChild(QFrame, 'sourceSection117')
+          platform_card = w.findChild(QFrame, 'platformSection117')
           assert product_card is not None and platform_card is not None
+          assert product_card.height() >= 166
           pr = rect_in(product_card, w.product)
           ur = rect_in(product_card, w.product_url)
-          assert ur.top() - pr.bottom() >= 7
+          assert ur.top() - pr.bottom() >= 8
           assert product_card.rect().contains(pr)
           assert product_card.rect().contains(ur)
-          for chip in platform_card.findChildren(QToolButton):
+          assert w.product.height() == 42
+          assert w.product_url.height() == 42
+          assert product_card.rect().contains(rect_in(product_card, w.source_row_product))
+          assert product_card.rect().contains(rect_in(product_card, w.source_row_url))
+          chips = platform_card.findChildren(QToolButton)
+          assert len(chips) == 7
+          for chip in chips:
               assert platform_card.rect().contains(rect_in(platform_card, chip))
-              assert chip.height() >= 30
-          assert len(platform_card.findChildren(QToolButton)) == 7
+              assert chip.height() == 38
 
           w.go(7)
           app.processEvents()
@@ -92,7 +100,7 @@ jobs:
               assert lab.isVisible() and ctl.isVisible()
               assert not lab.geometry().intersects(ctl.geometry())
 
-          print('ui-v116-ok')
+          print('ui-v117-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -116,7 +124,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v116.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v117.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -135,11 +143,12 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.16
-          - 상품명과 쿠팡/상품 URL 입력칸을 독립 행으로 분리하고 세로 간격을 확보했습니다.
-          - 플랫폼 영역을 GroupBox 제목 방식에서 독립 카드 방식으로 바꿔 아이콘 하단 잘림을 제거했습니다.
-          - 빠른 설정 4개 ON/OFF 항목이 모두 패널 안에 보이도록 높이를 재계산했습니다.
-          - 하단 상태 버전 표시를 v1.16으로 동기화했습니다.
+          NovaShorts v1.17
+          - 빠른 설정 카드 높이를 넉넉하게 늘리고 DPI 배율에서도 마지막 행이 잘리지 않게 변경했습니다.
+          - AI 모델/TTS/해상도/토글 행 배경을 전체 디자인과 맞는 네이비 카드형 스타일로 통일했습니다.
+          - 상품명과 쿠팡/상품 URL을 고정 높이의 독립 행 위젯으로 분리했습니다.
+          - 상품 입력 카드의 고정 높이를 제거하고 최소 크기 기반으로 늘어나게 해 하단 테두리 잘림을 방지했습니다.
+          - 플랫폼 버튼 높이와 카드 여백도 다시 확보했습니다.
           - 자세한 기능 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
@@ -156,13 +165,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.16.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.16.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.17.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.17.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.16
-          path: NovaShorts_v1.16.zip
+          name: NovaShorts_v1.17
+          path: NovaShorts_v1.17.zip
           if-no-files-found: error
           retention-days: 30
