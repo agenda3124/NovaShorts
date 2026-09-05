@@ -34,37 +34,71 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py
-          python -c "import main_v114, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py
+          python -c "import main_v115, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
 
-      - name: UI geometry smoke test
+      - name: UI clipping and spacing smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           @'
+          from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QLabel
-          import main_v114
+          import main_v115
+
           app = QApplication([])
-          w = main_v114.Nova()
+          w = main_v115.Nova()
           w.resize(1600, 930)
           w.show()
           app.processEvents()
+
           assert w.pages.count() == 8
           sidebar = w.findChild(QFrame, 'sidebar')
-          assert sidebar is not None and sidebar.width() == 220
-          ver = w.findChild(QLabel, 'version114')
-          assert ver is not None and ver.text() == 'Version 1.14'
+          assert sidebar is not None and sidebar.width() == 205
+          ver = w.findChild(QLabel, 'version115')
+          assert ver is not None and ver.text() == 'Version 1.15'
+
+          quick = w.findChild(QFrame, 'quickCard115')
+          assert quick is not None
           assert len(w.quick_field_pairs) == 3
           assert len(w.quick_toggle_pairs) == 4
+
+          def rect_in(parent, child):
+              p = child.mapTo(parent, QPoint(0, 0))
+              return QRect(p, child.size())
+
           for lab, ctl in w.quick_field_pairs:
               assert lab.isVisible() and ctl.isVisible()
+              assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
-              assert lab.height() >= 30 and ctl.height() >= 30
+              assert quick.rect().contains(rect_in(quick, lab))
+              assert quick.rect().contains(rect_in(quick, ctl))
+
           for lab, ctl in w.quick_toggle_pairs:
               assert lab.isVisible() and ctl.isVisible()
+              assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
               assert ctl.text() in ('ON', 'OFF')
+              assert quick.rect().contains(rect_in(quick, lab))
+              assert quick.rect().contains(rect_in(quick, ctl))
+
+          # Specifically verify the final quick-setting row is not clipped by preview.
+          last_lab, last_ctl = w.quick_toggle_pairs[-1]
+          assert rect_in(quick, last_lab).bottom() < quick.height()
+          assert rect_in(quick, last_ctl).bottom() < quick.height()
+
+          # Source page: keep visible air between the page heading and first group box.
+          w.go(1)
+          app.processEvents()
+          page = w.pages.currentWidget()
+          title = next(x for x in page.findChildren(QLabel) if x.text() == '글로벌 영상 소싱')
+          group = w.product.parentWidget()
+          title_bottom = title.mapTo(page, QPoint(0, 0)).y() + title.height()
+          group_top = group.mapTo(page, QPoint(0, 0)).y()
+          assert group_top - title_bottom >= 10
+
+          # Settings page still constructs cleanly after the inherited v1.14 row fix.
           w.go(7)
           app.processEvents()
           assert len(w.setting_pairs) == 8
@@ -72,10 +106,8 @@ jobs:
               assert lab.isVisible() and ctl.isVisible()
               assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
-          w.go(0)
-          app.processEvents()
-          assert w.findChild(QFrame, 'heroV112') is None
-          print('ui-geometry-ok', w.windowTitle(), sidebar.width())
+
+          print('ui-v115-ok', w.windowTitle(), 'sidebar', sidebar.width(), 'quick-h', quick.height())
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -99,11 +131,12 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v114.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v115.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.15.txt' '.\dist\NovaShorts\NovaShorts_사용설명서_v1.15.txt' -Force
           if (Test-Path 'C:\Program Files\Tesseract-OCR') {
             Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           }
@@ -117,15 +150,12 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.14
-          1. 좌측 메뉴 폭을 줄여 본문 작업 공간을 넓혔습니다.
-          2. 버전은 NovaShorts 제목 아래 작은 별도 줄로 배치해 잘리지 않게 했습니다.
-          3. 빠른 설정은 라벨/선택박스를 같은 행의 독립 컬럼으로 배치해 글자와 콤보박스가 겹치지 않도록 수정했습니다.
-          4. 자막 제거/자동 컷/워터마크/업로드 후 링크 생성은 ON/OFF 단추형 토글을 유지합니다.
-          5. 설정 화면도 각 입력 항목을 독립 행 컨테이너로 만들어 라벨과 입력창이 겹치지 않도록 했습니다.
-          6. 작은 화면에서는 설정 화면이 세로 스크롤되며 항목이 잘리지 않습니다.
-          7. 빌드 전에 실제 1600x930 UI geometry 검사로 빠른 설정/설정 화면의 겹침 여부를 자동 검증합니다.
-          8. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 소싱 기능과 플랫폼 아이콘 UI는 유지합니다.
+          NovaShorts v1.15
+          - 상세 설명은 NovaShorts_사용설명서_v1.15.txt를 확인하세요.
+          - 좌측 메뉴 폭 축소 및 버전 분리 표시
+          - 빠른 설정 높이 자동 계산: 마지막 ON/OFF 행 잘림 방지
+          - 상품/검색어 및 플랫폼 그룹 상단 여백 확대
+          - Windows DPI/폰트 배율에서 겹침을 줄이도록 행 컨테이너 기반 배치
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -138,17 +168,18 @@ jobs:
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tesseract.exe')) { throw 'tesseract.exe missing' }
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\kor.traineddata')) { throw 'kor OCR data missing' }
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata')) { throw 'chi_sim OCR data missing' }
+          if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서_v1.15.txt')) { throw 'detailed manual missing' }
 
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.14.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.14.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.15.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.15.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.14
-          path: NovaShorts_v1.14.zip
+          name: NovaShorts_v1.15
+          path: NovaShorts_v1.15.zip
           if-no-files-found: error
           retention-days: 30
