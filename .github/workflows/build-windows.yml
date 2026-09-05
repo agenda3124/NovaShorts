@@ -1,0 +1,91 @@
+name: Build NovaShorts Windows
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-build.txt
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          python -m py_compile engine.py bridge.py main.py
+
+      - name: Prepare FFmpeg
+        shell: pwsh
+        run: |
+          python -c "import imageio_ffmpeg, shutil; shutil.copy2(imageio_ffmpeg.get_ffmpeg_exe(), 'ffmpeg.exe')"
+
+      - name: Install Tesseract OCR
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          choco install tesseract --yes --no-progress
+
+      - name: Build application
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http main.py
+          Copy-Item .\ffmpeg.exe .\dist\NovaShorts\ffmpeg.exe -Force
+          Copy-Item .\browser-extension .\dist\NovaShorts\browser-extension -Recurse -Force
+          if (Test-Path 'C:\Program Files\Tesseract-OCR') {
+            Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
+          }
+          @'
+          @echo off
+          cd /d "%~dp0"
+          start "" "NovaShorts.exe"
+          '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
+          @'
+          NovaShorts v1.5
+          1. START_NovaShorts.bat 또는 NovaShorts.exe 실행
+          2. 설정 탭에서 본인의 API 키/출력폴더 입력
+          3. Chrome/Edge 확장: browser-extension 폴더를 개발자 모드에서 '압축해제된 확장 프로그램 로드'
+          4. 확장 Token은 %USERPROFILE%\.novashorts\settings.json 의 bridge_token 값
+          회원가입/원본 구독/라이선스 기능은 포함하지 않습니다.
+          '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
+
+      - name: Smoke test packaged imports
+        shell: pwsh
+        run: |
+          if (!(Test-Path '.\dist\NovaShorts\NovaShorts.exe')) { throw 'NovaShorts.exe not created' }
+          Get-ChildItem .\dist\NovaShorts | Select-Object Name,Length
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.5.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.5.zip' -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaShorts_v1.5
+          path: NovaShorts_v1.5.zip
+          if-no-files-found: error
+          retention-days: 30
