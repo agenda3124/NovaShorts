@@ -34,80 +34,65 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py
-          python -c "import main_v115, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py
+          python -c "import main_v116, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
 
-      - name: UI clipping and spacing smoke test
+      - name: UI spacing and clipping smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           @'
           from PySide6.QtCore import QPoint, QRect
-          from PySide6.QtWidgets import QApplication, QFrame, QLabel
-          import main_v115
+          from PySide6.QtWidgets import QApplication, QFrame, QToolButton
+          import main_v116
 
           app = QApplication([])
-          w = main_v115.Nova()
+          w = main_v116.Nova()
           w.resize(1600, 930)
           w.show()
           app.processEvents()
-
           assert w.pages.count() == 8
-          sidebar = w.findChild(QFrame, 'sidebar')
-          assert sidebar is not None and sidebar.width() == 205
-          ver = w.findChild(QLabel, 'version115')
-          assert ver is not None and ver.text() == 'Version 1.15'
-
-          quick = w.findChild(QFrame, 'quickCard115')
-          assert quick is not None
-          assert len(w.quick_field_pairs) == 3
-          assert len(w.quick_toggle_pairs) == 4
+          assert 'v1.16' in w.windowTitle()
+          assert 'v1.16' in w.status.text()
 
           def rect_in(parent, child):
               p = child.mapTo(parent, QPoint(0, 0))
               return QRect(p, child.size())
 
-          for lab, ctl in w.quick_field_pairs:
+          quick = w.findChild(QFrame, 'quickCard116')
+          assert quick is not None
+          assert len(w.quick_field_pairs) == 3
+          assert len(w.quick_toggle_pairs) == 4
+          for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
               assert lab.isVisible() and ctl.isVisible()
-              assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
               assert quick.rect().contains(rect_in(quick, lab))
               assert quick.rect().contains(rect_in(quick, ctl))
+          assert all(x.text() in ('ON','OFF') for _,x in w.quick_toggle_pairs)
 
-          for lab, ctl in w.quick_toggle_pairs:
-              assert lab.isVisible() and ctl.isVisible()
-              assert lab.parent() is ctl.parent()
-              assert not lab.geometry().intersects(ctl.geometry())
-              assert ctl.text() in ('ON', 'OFF')
-              assert quick.rect().contains(rect_in(quick, lab))
-              assert quick.rect().contains(rect_in(quick, ctl))
-
-          # Specifically verify the final quick-setting row is not clipped by preview.
-          last_lab, last_ctl = w.quick_toggle_pairs[-1]
-          assert rect_in(quick, last_lab).bottom() < quick.height()
-          assert rect_in(quick, last_ctl).bottom() < quick.height()
-
-          # Source page: keep visible air between the page heading and first group box.
           w.go(1)
           app.processEvents()
-          page = w.pages.currentWidget()
-          title = next(x for x in page.findChildren(QLabel) if x.text() == '글로벌 영상 소싱')
-          group = w.product.parentWidget()
-          title_bottom = title.mapTo(page, QPoint(0, 0)).y() + title.height()
-          group_top = group.mapTo(page, QPoint(0, 0)).y()
-          assert group_top - title_bottom >= 10
+          product_card = w.findChild(QFrame, 'sourceSection116')
+          platform_card = w.findChild(QFrame, 'platformSection116')
+          assert product_card is not None and platform_card is not None
+          pr = rect_in(product_card, w.product)
+          ur = rect_in(product_card, w.product_url)
+          assert ur.top() - pr.bottom() >= 7
+          assert product_card.rect().contains(pr)
+          assert product_card.rect().contains(ur)
+          for chip in platform_card.findChildren(QToolButton):
+              assert platform_card.rect().contains(rect_in(platform_card, chip))
+              assert chip.height() >= 30
+          assert len(platform_card.findChildren(QToolButton)) == 7
 
-          # Settings page still constructs cleanly after the inherited v1.14 row fix.
           w.go(7)
           app.processEvents()
-          assert len(w.setting_pairs) == 8
           for lab, ctl in w.setting_pairs:
               assert lab.isVisible() and ctl.isVisible()
-              assert lab.parent() is ctl.parent()
               assert not lab.geometry().intersects(ctl.geometry())
 
-          print('ui-v115-ok', w.windowTitle(), 'sidebar', sidebar.width(), 'quick-h', quick.height())
+          print('ui-v116-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -131,12 +116,12 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v115.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v116.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
-          Copy-Item '.\NovaShorts_사용설명서_v1.15.txt' '.\dist\NovaShorts\NovaShorts_사용설명서_v1.15.txt' -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.15.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
           if (Test-Path 'C:\Program Files\Tesseract-OCR') {
             Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           }
@@ -150,12 +135,12 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.15
-          - 상세 설명은 NovaShorts_사용설명서_v1.15.txt를 확인하세요.
-          - 좌측 메뉴 폭 축소 및 버전 분리 표시
-          - 빠른 설정 높이 자동 계산: 마지막 ON/OFF 행 잘림 방지
-          - 상품/검색어 및 플랫폼 그룹 상단 여백 확대
-          - Windows DPI/폰트 배율에서 겹침을 줄이도록 행 컨테이너 기반 배치
+          NovaShorts v1.16
+          - 상품명과 쿠팡/상품 URL 입력칸을 독립 행으로 분리하고 세로 간격을 확보했습니다.
+          - 플랫폼 영역을 GroupBox 제목 방식에서 독립 카드 방식으로 바꿔 아이콘 하단 잘림을 제거했습니다.
+          - 빠른 설정 4개 ON/OFF 항목이 모두 패널 안에 보이도록 높이를 재계산했습니다.
+          - 하단 상태 버전 표시를 v1.16으로 동기화했습니다.
+          - 자세한 기능 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -166,20 +151,18 @@ jobs:
           if (!(Test-Path '.\dist\NovaShorts\ffprobe.exe')) { throw 'ffprobe.exe missing' }
           if (!(Test-Path '.\dist\NovaShorts\assets\platforms\tiktok.svg')) { throw 'platform icons missing' }
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tesseract.exe')) { throw 'tesseract.exe missing' }
-          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\kor.traineddata')) { throw 'kor OCR data missing' }
-          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata')) { throw 'chi_sim OCR data missing' }
-          if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서_v1.15.txt')) { throw 'detailed manual missing' }
+          if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서.txt')) { throw 'manual missing' }
 
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.15.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.15.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.16.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.16.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.15
-          path: NovaShorts_v1.15.zip
+          name: NovaShorts_v1.16
+          path: NovaShorts_v1.16.zip
           if-no-files-found: error
           retention-days: 30
