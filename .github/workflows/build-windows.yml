@@ -34,15 +34,15 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py
-          python -c "import main_v112, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
+          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py
+          python -c "import main_v113, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok', list(engine_v112.PLATFORMS))"
 
       - name: UI construction smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -c "from pathlib import Path; from PySide6.QtWidgets import QApplication; import main_v112; app=QApplication([]); w=main_v112.Nova(); assert w.pages.count()==8; assert len(w.home_checks)==7; assert len(w.pchecks)==7; assert Path('assets/platforms/tiktok.svg').exists(); assert hasattr(w,'quick_link'); print('ui-ok', w.windowTitle()); w.close()"
+          python -c "from PySide6.QtWidgets import QApplication,QFrame; import main_v113; app=QApplication([]); w=main_v113.Nova(); assert w.pages.count()==8; assert len(w.home_checks)==7; assert hasattr(w,'quick_link'); assert w.quick_ocr.text()=='ON'; assert w.quick_cut.text()=='ON'; assert w.quick_wm.text() in ('ON','OFF'); assert w.quick_link.text() in ('ON','OFF'); assert w.findChild(QFrame,'heroV112') is None; assert w.width()>=1260; print('ui-ok',w.windowTitle(),w.quick_ocr.text(),w.quick_cut.text()); w.close()"
 
       - name: Install FFmpeg and Tesseract
         shell: pwsh
@@ -63,7 +63,7 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v112.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v113.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
@@ -81,15 +81,15 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.12
+          NovaShorts v1.13
           1. NovaShorts.exe 또는 START_NovaShorts.bat 실행
-          2. 홈 화면을 시안 기준으로 재구성: 그라데이션 히어로 + 플랫폼 로고 칩 + 검색 카드.
-          3. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 총 7개 소싱 플랫폼 UI/검색계획/브리지 수집 경로를 연결했습니다.
-          4. 빠른 설정을 세로형 필드로 재배치해 텍스트 잘림을 제거하고 자막 제거/자동 컷/워터마크/업로드 후 링크 생성 토글을 시안과 같은 구조로 배치했습니다.
-          5. 좌측 메뉴의 테두리, hover, active 상태를 강화했습니다.
-          6. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
-          7. browser-extension 폴더는 Chrome/Edge 개발자 모드에서 '압축해제된 확장 프로그램 로드'로 추가합니다.
-          8. %USERPROFILE%\.novashorts\settings.json 의 bridge_token 값을 확장 프로그램에 입력합니다.
+          2. 홈의 대형 배너를 제거해 소싱 결과와 작업 영역이 아래로 밀리지 않도록 수정했습니다.
+          3. TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688 플랫폼 아이콘+이름 UI는 유지합니다.
+          4. 빠른 설정의 AI 모델/TTS/해상도 라벨과 콤보박스를 고정 높이로 분리해 겹침과 잘림을 방지했습니다.
+          5. 자막 제거/자동 컷/워터마크/업로드 후 링크 생성은 ON/OFF 단추 방식으로 변경했습니다.
+          6. 설정 화면을 컴팩트한 스크롤 안전 레이아웃으로 재구성해 1600x930에서 모든 항목이 겹치지 않도록 수정했습니다.
+          7. 좌측 메뉴 hover/active 테두리와 포인트를 강화했습니다.
+          8. 설정에서 본인의 Gemini/Coupang/YouTube/Lnk.Bio 키를 입력하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -106,13 +106,13 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.12.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.12.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.13.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.13.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.12
-          path: NovaShorts_v1.12.zip
+          name: NovaShorts_v1.13
+          path: NovaShorts_v1.13.zip
           if-no-files-found: error
           retention-days: 30
