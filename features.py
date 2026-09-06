@@ -16,6 +16,13 @@ def _ff(args:list[str], check=True):
 
 
 def video_duration(path:str)->float:
+    probe = tool('ffprobe')
+    if probe:
+        p = subprocess.run([probe,'-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',path],capture_output=True,text=True,encoding='utf-8',errors='replace')
+        try:
+            return float((p.stdout or '').strip())
+        except Exception:
+            pass
     p = _ff(['-i', path], check=False)
     m = re.search(r'Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)', p.stderr)
     if not m:
@@ -86,21 +93,61 @@ def make_thumbnail(video:str, text:str, output:str, at_seconds:float=1.0)->str:
     return str(out)
 
 
+def _scene_times(video:str, threshold:float=.30)->list[float]:
+    # ffmpeg scene detector is faster and more stable than decoding every frame in Python.
+    p=_ff(['-i',video,'-vf',f"select='gt(scene,{threshold})',showinfo",'-an','-f','null','-'],check=False)
+    text=(p.stderr or '')+'\n'+(p.stdout or '')
+    vals=[]
+    for x in re.findall(r'pts_time:([0-9]+(?:\.[0-9]+)?)',text):
+        try:
+            t=float(x)
+            if not vals or abs(t-vals[-1])>.7: vals.append(t)
+        except Exception:
+            pass
+    return vals
+
+
+def _pick_starts(total:float,target:float,clip:float,n:int,scene_times:list[float])->list[float]:
+    usable=max(0.0,total-clip)
+    scenes=[max(0.0,min(usable,t)) for t in scene_times if 0 <= t <= usable]
+    if not scenes:
+        return [0.0] if n==1 else [usable*i/(n-1) for i in range(n)]
+    # Prefer scene changes spread across the source instead of taking consecutive moments.
+    starts=[]
+    for i in range(n):
+        ideal=0.0 if n==1 else usable*i/(n-1)
+        cand=min(scenes,key=lambda s:abs(s-ideal))
+        if all(abs(cand-x)>=clip*.55 for x in starts):
+            starts.append(cand)
+        else:
+            starts.append(ideal)
+    return sorted(max(0.0,min(usable,x)) for x in starts)
+
+
 def auto_cut_vertical(video:str, output:str, target_seconds:float=18.0, clip_seconds:float=2.6, progress=None)->str:
     total=video_duration(video)
     if total <= 0:
         raise RuntimeError('영상 길이를 확인할 수 없습니다.')
-    target=max(4.0,min(float(target_seconds),min(total,60.0)))
+    target=max(4.0,min(float(target_seconds),60.0))
     clip=max(1.2,min(float(clip_seconds),5.0))
-    n=max(1,min(8,round(target/clip)))
-    usable=max(0.0,total-clip)
-    starts=[0.0] if n==1 else [usable*i/(n-1) for i in range(n)]
+    n=max(1,min(18,round(target/clip)))
+    # If source is shorter, looping later in the final compositor is preferable to broken cuts.
+    if total <= clip:
+        starts=[0.0]
+        n=1
+        clip=min(total,target)
+    else:
+        try:
+            scenes=_scene_times(video,.28)
+        except Exception:
+            scenes=[]
+        starts=_pick_starts(total,target,clip,n,scenes)
     out=Path(output)
     out.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='novashorts_cut_') as td:
         td=Path(td)
         clips=[]
-        vf='scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black'
+        vf='scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
         for i,s in enumerate(starts):
             c=td/f'clip_{i:02d}.mp4'
             args=['-y','-ss',f'{s:.3f}','-t',f'{clip:.3f}','-i',video,'-vf',vf,'-c:v','libx264','-preset','veryfast','-crf','22','-c:a','aac','-b:a','160k',str(c)]
@@ -109,7 +156,7 @@ def auto_cut_vertical(video:str, output:str, target_seconds:float=18.0, clip_sec
                 _ff(['-y','-ss',f'{s:.3f}','-t',f'{clip:.3f}','-i',video,'-vf',vf,'-an','-c:v','libx264','-preset','veryfast','-crf','22',str(c)])
             clips.append(c)
             if progress:
-                progress(f'자동 컷 {i+1}/{n}')
+                progress(f'장면 기반 자동 컷 {i+1}/{len(starts)}')
         lines=[]
         for c in clips:
             safe=c.as_posix().replace("'", "''")
