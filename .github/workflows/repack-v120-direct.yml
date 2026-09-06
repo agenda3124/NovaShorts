@@ -1,0 +1,45 @@
+name: Repack NovaShorts v1.20 Direct
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/repack-v120-direct.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repack:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download verified v1.20 artifact
+        shell: pwsh
+        run: |
+          gh run download 34014213205 --repo agenda3124/NovaShorts --name NovaShorts_v1.20 --dir .\artifact
+          if (!(Test-Path '.\artifact\NovaShorts_v1.20.zip')) { throw 'Original v1.20 ZIP missing' }
+
+      - name: Extract to one-layer package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.\NovaShorts_v1.20' | Out-Null
+          Expand-Archive '.\artifact\NovaShorts_v1.20.zip' -DestinationPath '.\NovaShorts_v1.20' -Force
+          if (!(Test-Path '.\NovaShorts_v1.20\NovaShorts.exe')) { throw 'NovaShorts.exe missing after extract' }
+          if (!(Test-Path '.\NovaShorts_v1.20\ffmpeg.exe')) { throw 'ffmpeg.exe missing after extract' }
+          if (!(Test-Path '.\NovaShorts_v1.20\ffprobe.exe')) { throw 'ffprobe.exe missing after extract' }
+          if (!(Test-Path '.\NovaShorts_v1.20\models\whisper-base\model.bin')) { throw 'Whisper model missing after extract' }
+          if (!(Test-Path '.\NovaShorts_v1.20\browser-extension\service_worker.js')) { throw 'Chrome Bridge missing after extract' }
+          Write-Host 'single-layer-package-ok'
+
+      - name: Upload direct package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaShorts_v1.20_DIRECT
+          path: NovaShorts_v1.20/**
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
