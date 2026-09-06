@@ -1,10 +1,22 @@
 {
   "manifest_version": 3,
   "name": "NovaShorts Bridge",
-  "version": "1.5.0",
-  "description": "Collects visible public video links for NovaShorts through the local bridge.",
+  "version": "1.9.0",
+  "description": "Collects public product/video metadata for NovaShorts through the local bridge.",
   "permissions": ["tabs", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1:38471/*", "https://*.douyin.com/*", "https://*.xiaohongshu.com/*", "https://*.kuaishou.com/*", "https://*.tiktok.com/*", "https://*.1688.com/*"],
+  "host_permissions": [
+    "http://127.0.0.1:38471/*",
+    "https://*.coupang.com/*",
+    "https://link.coupang.com/*",
+    "https://*.douyin.com/*",
+    "https://*.xiaohongshu.com/*",
+    "https://*.kuaishou.com/*",
+    "https://*.tiktok.com/*",
+    "https://*.youtube.com/*",
+    "https://youtu.be/*",
+    "https://*.instagram.com/*",
+    "https://*.1688.com/*"
+  ],
   "background": {"service_worker": "service_worker.js"},
   "action": {"default_popup": "popup.html", "default_title": "NovaShorts Bridge"}
 }
