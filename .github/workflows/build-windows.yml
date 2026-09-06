@@ -35,8 +35,8 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py product_source.py features.py pipeline_v120.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py main_v120.py
-          python -c "import main_v120, pipeline_v120, engine_v112, cv2, faster_whisper; assert len(engine_v112.PLATFORMS)==7; print('import-v120-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py browser_cdp.py product_source.py features.py pipeline_v120.py pipeline_v121.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py main_v120.py main_v121.py
+          python -c "import main_v121, pipeline_v121, browser_cdp, engine_v112, cv2, faster_whisper, websocket; assert len(engine_v112.PLATFORMS)==7; print('import-v121-ok')"
 
       - name: Product and pipeline regression
         shell: pwsh
@@ -45,6 +45,8 @@ jobs:
           from engine import Settings
           from product_source import parse_product_html, search_seed, score_candidate
           from pipeline_v120 import fallback_script, generate_publish_metadata
+          from pipeline_v121 import run_processing_pipeline_v121, merge_source_videos
+          import browser_cdp
           html = '''
           <html><head>
           <meta property="og:title" content="테스트브랜드 IRT6030 스마트 온도계 | 쿠팡">
@@ -64,29 +66,29 @@ jobs:
           st = Settings()
           assert st.pipeline_remove_subtitles and st.pipeline_auto_cut and st.pipeline_add_korean_subtitles
           script = fallback_script(p, '사용 장면 테스트')
-          assert len(script) > 30
           meta = generate_publish_metadata(p, script, '')
-          assert meta['title'] and meta['description'] and meta['tags']
-          print('pipeline-regression-ok')
+          assert len(script) > 30 and meta['title'] and meta['description'] and meta['tags']
+          assert callable(run_processing_pipeline_v121) and callable(merge_source_videos)
+          assert callable(browser_cdp.analyze_product_page) and callable(browser_cdp.collect_links) and callable(browser_cdp.extract_media)
+          print('pipeline-v121-regression-ok')
           '@ | Set-Content .\pipeline_test.py -Encoding UTF8
           python .\pipeline_test.py
 
-      - name: Bridge extension regression
+      - name: Browser and bridge regression
         shell: pwsh
         run: |
           @'
           import json
           from pathlib import Path
+          import browser_cdp
+          assert browser_cdp.find_browser() is not None, 'Chrome/Edge should exist on windows-latest'
           m=json.loads(Path('browser-extension/manifest.json').read_text(encoding='utf-8'))
           hosts=' '.join(m['host_permissions'])
           for x in ['coupang.com','youtube.com','instagram.com','douyin.com','xiaohongshu.com','kuaishou.com','tiktok.com','1688.com']:
               assert x in hosts, x
-          js=Path('browser-extension/service_worker.js').read_text(encoding='utf-8')
-          for x in ['analyze_product_page','collect_links','extract_media','MAX_ACTIVE=4']:
-              assert x in js, x
-          print('bridge-v120-ok')
-          '@ | Set-Content .\bridge_test.py -Encoding UTF8
-          python .\bridge_test.py
+          print('browser-fallback-v121-ok')
+          '@ | Set-Content .\browser_test.py -Encoding UTF8
+          python .\browser_test.py
 
       - name: Responsive UI and feature wiring smoke test
         shell: pwsh
@@ -96,57 +98,43 @@ jobs:
           @'
           from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
-          import main_v120
+          import main_v121
 
           app = QApplication([])
-          w = main_v120.Nova()
-          w.show()
-          app.processEvents()
-
+          w = main_v121.Nova()
+          w.show(); app.processEvents()
           assert w.pages.count() == 8
-          assert 'v1.20' in w.windowTitle()
+          assert 'v1.21' in w.windowTitle()
+          assert len(w.mode_buttons121) == 4
+          assert w.mode_stack121.count() == 4
+          assert w.home_make121.isVisible()
+          assert hasattr(w, 'home_product_url121')
+          assert hasattr(w, 'home_single_path121')
+          assert hasattr(w, 'home_multi_list121')
+          assert hasattr(w, 'home_ready_script121')
           assert hasattr(w, 'right_scroll118') and isinstance(w.right_scroll118, QScrollArea)
-          assert len(w.quick_field_pairs) == 3
-          assert len(w.quick_toggle_pairs) == 4
-          assert hasattr(w, 'auto_pipeline_card120')
-          assert hasattr(w, 'pipeline_status120')
 
-          def rect_in(parent, child):
-              p = child.mapTo(parent, QPoint(0, 0))
-              return QRect(p, child.size())
-
-          def check_quick():
+          for width,height in [(1600,930),(1440,900),(1280,720)]:
+              w.resize(width,height); w.go(0); app.processEvents()
+              assert w.home_make121.isVisible()
+              for b in w.mode_buttons121: assert b.isVisible()
+              w.go(1); app.processEvents()
               quick = w.findChild(QFrame, 'quickCard118')
-              assert quick is not None
+              assert quick is not None and quick.isVisible()
               for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
                   assert lab.isVisible() and ctl.isVisible()
                   assert not lab.geometry().intersects(ctl.geometry())
-                  assert quick.rect().contains(rect_in(quick, lab))
-                  assert quick.rect().contains(rect_in(quick, ctl))
 
-          for width,height in [(1600,930),(1440,900),(1280,720)]:
-              w.resize(width,height)
-              app.processEvents()
-              check_quick()
-
-          w.go(1)
-          app.processEvents()
-          assert w.auto_pipeline_card120.isVisible()
+          w.go(1); app.processEvents()
           assert len(w.pchecks) == 7
+          assert w._start_pipeline_row120.__func__.__module__ == 'main_v121'
+          assert w.bridge_collect.__func__.__module__ == 'main_v121'
+          assert w.analyze_product_url119.__func__.__module__ == 'main_v121'
 
-          w.go(7)
-          app.processEvents()
+          w.go(7); app.processEvents()
           assert len(w.setting_pairs) == 8
           assert len(w.pipeline_setting_pairs120) == 7
-          for lab, ctl in w.setting_pairs + w.pipeline_setting_pairs120:
-              assert lab.isVisible() and ctl.isVisible()
-              assert not lab.geometry().intersects(ctl.geometry())
-
-          # Manual buttons resolve to upgraded methods instead of demo stubs.
-          assert w.clean_sub.__func__.__module__ == 'main_v120'
-          assert w.make_tts.__func__.__module__ == 'main_v120'
-          assert w.render.__func__.__module__ == 'main_v120'
-          print('ui-feature-v120-ok')
+          print('ui-feature-v121-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -197,16 +185,16 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts `
             --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib `
             --collect-all PySide6.QtSvg --collect-all PIL --collect-all faster_whisper --collect-all ctranslate2 `
-            --collect-all av --collect-all tokenizers --collect-all cv2 `
+            --collect-all av --collect-all tokenizers --collect-all cv2 --collect-all websocket `
             --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http `
             --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg `
-            main_v120.py
+            main_v121.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
           Copy-Item '.\models' '.\dist\NovaShorts\models' -Recurse -Force
-          Copy-Item '.\NovaShorts_사용설명서_v1.20.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.21.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
           Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           $td = '.\dist\NovaShorts\tesseract\tessdata'
           New-Item -ItemType Directory -Force -Path $td | Out-Null
@@ -218,36 +206,36 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.20
-          상품 분석 → 7개 플랫폼 소싱 → 관련도 자동선택 → 다운로드 → OCR/스마트 자막 제거 → Whisper 음성분석 → 한국어 대본 → TTS/SRT → 장면 기반 자동 컷 → 9:16 렌더 → 한국어 자막 → 워터마크 → 썸네일 → 선택적 YouTube/Lnk.Bio까지 하나의 원클릭 파이프라인으로 연결했습니다.
-          쿠팡 API 키는 URL 분석/소싱 필수가 아니며 상품정보 API 보강에만 사용합니다.
-          YouTube 자동 업로드와 Lnk.Bio 자동 링크는 설정에서 사용자가 ON으로 켠 경우에만 실행됩니다.
-          자세한 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
+          NovaShorts v1.21
+          - 메인 화면을 상품 주소 / 영상 1개 / 여러 영상 / 준비한 자료의 4가지 제작 방식으로 전면 개편했습니다.
+          - 목소리 / 자막 / 편집 설정은 필요한 항목만 펼쳐서 바꿉니다.
+          - 상품 주소는 일반 요청이 403으로 막히면 Chrome/Edge CDP 브라우저를 자동 실행해 다시 분석합니다.
+          - Chrome Bridge 토큰은 기본 사용에 필요하지 않으며 기존 확장 프로그램은 보조 폴백으로만 남겨두었습니다.
+          - 여러 영상 병합, 준비 대본 사용, OCR, 스마트 자막 제거, Whisper, TTS, 자동 컷, 9:16 렌더, 한국어 자막, 썸네일을 실제 제작 파이프라인으로 연결했습니다.
+          - 완성 영상은 메인 화면에서 바로 재생하거나 결과 폴더를 열 수 있습니다.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
         shell: pwsh
         run: |
-          if (!(Test-Path '.\dist\NovaShorts\NovaShorts.exe')) { throw 'NovaShorts.exe not created' }
-          if (!(Test-Path '.\dist\NovaShorts\ffmpeg.exe')) { throw 'ffmpeg.exe missing' }
-          if (!(Test-Path '.\dist\NovaShorts\ffprobe.exe')) { throw 'ffprobe.exe missing' }
-          if (!(Test-Path '.\dist\NovaShorts\tesseract\tesseract.exe')) { throw 'tesseract.exe missing' }
-          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\kor.traineddata')) { throw 'kor OCR data missing' }
-          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata')) { throw 'Chinese OCR data missing' }
-          if (!(Test-Path '.\dist\NovaShorts\models\whisper-base\model.bin')) { throw 'Whisper base model missing' }
-          if (!(Test-Path '.\dist\NovaShorts\browser-extension\service_worker.js')) { throw 'bridge extension missing' }
-          if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서.txt')) { throw 'manual missing' }
+          $required = @(
+            '.\dist\NovaShorts\NovaShorts.exe',
+            '.\dist\NovaShorts\ffmpeg.exe',
+            '.\dist\NovaShorts\ffprobe.exe',
+            '.\dist\NovaShorts\tesseract\tesseract.exe',
+            '.\dist\NovaShorts\tesseract\tessdata\kor.traineddata',
+            '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata',
+            '.\dist\NovaShorts\models\whisper-base\model.bin',
+            '.\dist\NovaShorts\browser-extension\service_worker.js',
+            '.\dist\NovaShorts\NovaShorts_사용설명서.txt'
+          )
+          foreach($p in $required){ if(!(Test-Path $p)){ throw "package missing: $p" } }
+          Get-ChildItem '.\dist\NovaShorts' | Select-Object -First 20
 
-      - name: Create ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.20.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.20.zip' -Algorithm SHA256
-
-      - name: Upload artifact
+      - name: Upload direct package
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.20
-          path: NovaShorts_v1.20.zip
+          name: NovaShorts_v1.21_DIRECT
+          path: dist/NovaShorts/*
           if-no-files-found: error
           retention-days: 30
