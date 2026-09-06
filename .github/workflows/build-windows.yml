@@ -142,21 +142,33 @@ jobs:
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
 
-      - name: Install FFmpeg and Tesseract
+      - name: Acquire FFmpeg and ffprobe
         shell: pwsh
         run: |
-          choco install ffmpeg --yes --no-progress
-          choco install tesseract --yes --no-progress
-
-      - name: Locate runtime tools
-        shell: pwsh
-        run: |
-          $ffmpeg = Get-ChildItem 'C:\ProgramData\chocolatey\lib' -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Where-Object {$_.FullName -match '\\tools\\'} | Select-Object -First 1
-          $ffprobe = Get-ChildItem 'C:\ProgramData\chocolatey\lib' -Recurse -Filter ffprobe.exe -ErrorAction SilentlyContinue | Where-Object {$_.FullName -match '\\tools\\'} | Select-Object -First 1
-          if (-not $ffmpeg) { throw 'ffmpeg.exe not found' }
-          if (-not $ffprobe) { throw 'ffprobe.exe not found' }
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+          curl.exe -L --fail --retry 5 --retry-delay 3 --connect-timeout 20 $url -o '.\ffmpeg_bundle.zip'
+          Expand-Archive '.\ffmpeg_bundle.zip' -DestinationPath '.\ffmpeg_bundle' -Force
+          $ffmpeg = Get-ChildItem '.\ffmpeg_bundle' -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe = Get-ChildItem '.\ffmpeg_bundle' -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ffmpeg) { throw 'ffmpeg.exe not found in downloaded bundle' }
+          if (-not $ffprobe) { throw 'ffprobe.exe not found in downloaded bundle' }
           Copy-Item $ffmpeg.FullName '.\ffmpeg.exe' -Force
           Copy-Item $ffprobe.FullName '.\ffprobe.exe' -Force
+          & '.\ffmpeg.exe' -version | Select-Object -First 1
+          & '.\ffprobe.exe' -version | Select-Object -First 1
+
+      - name: Install Tesseract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $ok = $false
+          for ($i=1; $i -le 3; $i++) {
+            choco install tesseract --yes --no-progress
+            if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') { $ok = $true; break }
+            Start-Sleep -Seconds (3 * $i)
+          }
+          if (-not $ok) { throw 'tesseract.exe not installed after retries' }
 
       - name: Build application
         shell: pwsh
@@ -167,13 +179,11 @@ jobs:
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
           Copy-Item '.\NovaShorts_사용설명서_v1.19.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
-          if (Test-Path 'C:\Program Files\Tesseract-OCR') {
-            Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
-          }
+          Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           $td = '.\dist\NovaShorts\tesseract\tessdata'
           New-Item -ItemType Directory -Force -Path $td | Out-Null
-          Invoke-WebRequest 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/kor.traineddata' -OutFile "$td\kor.traineddata"
-          Invoke-WebRequest 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/chi_sim.traineddata' -OutFile "$td\chi_sim.traineddata"
+          curl.exe -L --fail --retry 4 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/kor.traineddata' -o "$td\kor.traineddata"
+          curl.exe -L --fail --retry 4 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/chi_sim.traineddata' -o "$td\chi_sim.traineddata"
           @'
           @echo off
           cd /d "%~dp0"
