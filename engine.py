@@ -8,7 +8,7 @@ from typing import Callable
 import requests
 
 APP_NAME='NovaShorts'
-APP_VERSION='1.5'
+APP_VERSION='1.20'
 HOME=Path.home()/'.novashorts'
 SETTINGS_FILE=HOME/'settings.json'
 LOG_FILE=HOME/'logs'/'novashorts.log'
@@ -40,6 +40,7 @@ class Settings:
  youtube_hashtag_prompt:str=''
  youtube_comment_enabled:bool=False
  youtube_comment_prompt:str=''
+ youtube_privacy:str='private'
  x_account_name:str=''
  lnkbio_client_id:str=''
  lnkbio_client_secret:str=''
@@ -52,6 +53,13 @@ class Settings:
  subtitle_position:str='bottom_center'
  subtitle_custom_y:int=80
  tts_voice:str='ko-KR-SunHiNeural'
+ tts_rate:str='+0%'
+ whisper_model:str='base'
+ pipeline_remove_subtitles:bool=True
+ pipeline_auto_cut:bool=True
+ pipeline_add_korean_subtitles:bool=True
+ pipeline_auto_thumbnail:bool=True
+ pipeline_target_seconds:int=20
  bridge_token:str=''
  def __post_init__(self):
   if self.platform_sources is None:self.platform_sources=list(PLATFORMS)
@@ -93,7 +101,14 @@ def diagnostics()->dict:
  try:
   import yt_dlp; yd=True
  except Exception:yd=False
- return {'ffmpeg':bool(tool('ffmpeg')),'ffprobe':bool(tool('ffprobe')),'tesseract':bool(tool('tesseract')),'yt_dlp':yd,'chrome_bridge':True}
+ try:
+  import cv2; cv=True
+ except Exception:cv=False
+ try:
+  import faster_whisper; fw=True
+ except Exception:fw=False
+ model_dir=app_dir()/'models'/'whisper-base'
+ return {'ffmpeg':bool(tool('ffmpeg')),'ffprobe':bool(tool('ffprobe')),'tesseract':bool(tool('tesseract')),'yt_dlp':yd,'opencv':cv,'faster_whisper':fw,'whisper_model':model_dir.exists(),'chrome_bridge':True}
 
 def normalize_title(t:str)->str:
  t=re.sub(r'\[[^\]]+\]|\([^\)]+\)',' ',t);t=re.sub(r'\b(무료배송|로켓배송|당일배송|정품|국내배송)\b',' ',t,flags=re.I)
@@ -156,6 +171,17 @@ def _run_ffmpeg(args:list[str]):
  p=subprocess.run([ff]+args,capture_output=True,text=True,encoding='utf-8',errors='replace')
  if p.returncode:raise RuntimeError(p.stderr[-2500:])
 
+def media_duration(path:str)->float:
+ probe=tool('ffprobe')
+ if probe:
+  p=subprocess.run([probe,'-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',path],capture_output=True,text=True,encoding='utf-8',errors='replace')
+  try:return float((p.stdout or '').strip())
+  except Exception:pass
+ p=subprocess.run([tool('ffmpeg') or 'ffmpeg','-i',path],capture_output=True,text=True,encoding='utf-8',errors='replace')
+ m=re.search(r'Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)',p.stderr or '')
+ if not m:return 0.0
+ h,mn,s=m.groups();return int(h)*3600+int(mn)*60+float(s)
+
 def extract_frames(video:str,out_dir:str,fps=.5)->list[Path]:
  o=Path(out_dir);o.mkdir(parents=True,exist_ok=True);_run_ffmpeg(['-y','-i',video,'-vf',f'fps={fps}',str(o/'frame_%05d.jpg')]);return sorted(o.glob('frame_*.jpg'))
 
@@ -181,13 +207,14 @@ def cleanup_bottom_subtitles(video:str,out:str,y_percent:int=62):
  yp=max(40,min(90,y_percent));y=f'ih*{yp}/100';fc=f'[0:v]split=2[b][c];[c]crop=iw:ih-{y}:0:{y},boxblur=12:2[bl];[b][bl]overlay=0:{y}'
  _run_ffmpeg(['-y','-i',video,'-filter_complex',fc,'-c:a','copy',out]);return out
 
-async def _tts(text,voice,out):
- import edge_tts;await edge_tts.Communicate(text,voice).save(out)
-def generate_tts(text,voice,out):asyncio.run(_tts(text,voice,out));return out
+async def _tts(text,voice,out,rate='+0%'):
+ import edge_tts;await edge_tts.Communicate(text,voice,rate=rate).save(out)
+def generate_tts(text,voice,out,rate='+0%'):asyncio.run(_tts(text,voice,out,rate));return out
 
 def compose_vertical(video:str,audio:str|None,out:str):
- args=['-y','-i',video]
- if audio:args += ['-i',audio,'-map','0:v:0','-map','1:a:0','-shortest']
+ args=['-y']
+ if audio:args += ['-stream_loop','-1','-i',video,'-i',audio,'-map','0:v:0','-map','1:a:0','-shortest']
+ else:args += ['-i',video]
  args += ['-vf','scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black','-c:v','libx264','-preset','medium','-crf','20','-c:a','aac','-b:a','192k',out]
  _run_ffmpeg(args);return out
 
