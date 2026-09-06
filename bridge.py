@@ -15,6 +15,11 @@ TASKS: Queue[dict] = Queue()
 RESULTS: Queue[dict] = Queue()
 _BACKLOG: deque[dict] = deque()
 _BACKLOG_LOCK = threading.Lock()
+_LAST_EXTENSION_POLL = 0.0
+
+
+def extension_recent(seconds: float = 4.0) -> bool:
+    return (time.time() - _LAST_EXTENSION_POLL) <= max(1.0, float(seconds))
 
 
 def _task_id(item: dict) -> str:
@@ -96,11 +101,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        global _LAST_EXTENSION_POLL
         if self.path == '/v1/status':
-            return self._send(200, {'ok': True, 'service': 'NovaShorts Bridge', 'port': PORT})
+            return self._send(200, {'ok': True, 'service': 'NovaShorts Bridge', 'port': PORT, 'extension_recent': extension_recent()})
         if not self._ok():
             return self._send(401, {'ok': False, 'error': 'unauthorized'})
         if self.path == '/v1/tasks':
+            _LAST_EXTENSION_POLL = time.time()
             try:
                 x = TASKS.get_nowait()
                 TASKS.task_done()
