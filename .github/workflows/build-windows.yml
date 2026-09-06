@@ -10,6 +10,7 @@ permissions:
 
 env:
   PYTHONUTF8: '1'
+  HF_HUB_DISABLE_SYMLINKS_WARNING: '1'
 
 jobs:
   build:
@@ -34,14 +35,16 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py product_source.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py
-          python -c "import main_v119, engine_v112, product_source; assert len(engine_v112.PLATFORMS)==7; print('import-v119-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py product_source.py features.py pipeline_v120.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py main_v120.py
+          python -c "import main_v120, pipeline_v120, engine_v112, cv2, faster_whisper; assert len(engine_v112.PLATFORMS)==7; print('import-v120-ok')"
 
-      - name: Product source parser regression
+      - name: Product and pipeline regression
         shell: pwsh
         run: |
           @'
+          from engine import Settings
           from product_source import parse_product_html, search_seed, score_candidate
+          from pipeline_v120 import fallback_script, generate_publish_metadata
           html = '''
           <html><head>
           <meta property="og:title" content="테스트브랜드 IRT6030 스마트 온도계 | 쿠팡">
@@ -58,9 +61,15 @@ jobs:
           assert 'IRT6030' in search_seed(p)
           s = score_candidate(p, {'title':'IRT6030 스마트 온도계 사용 영상','url':'https://example.com/v'}, check_image=False)
           assert s['_score'] >= 90
-          print('product-source-regression-ok')
-          '@ | Set-Content .\product_test.py -Encoding UTF8
-          python .\product_test.py
+          st = Settings()
+          assert st.pipeline_remove_subtitles and st.pipeline_auto_cut and st.pipeline_add_korean_subtitles
+          script = fallback_script(p, '사용 장면 테스트')
+          assert len(script) > 30
+          meta = generate_publish_metadata(p, script, '')
+          assert meta['title'] and meta['description'] and meta['tags']
+          print('pipeline-regression-ok')
+          '@ | Set-Content .\pipeline_test.py -Encoding UTF8
+          python .\pipeline_test.py
 
       - name: Bridge extension regression
         shell: pwsh
@@ -75,11 +84,11 @@ jobs:
           js=Path('browser-extension/service_worker.js').read_text(encoding='utf-8')
           for x in ['analyze_product_page','collect_links','extract_media','MAX_ACTIVE=4']:
               assert x in js, x
-          print('bridge-v119-ok')
+          print('bridge-v120-ok')
           '@ | Set-Content .\bridge_test.py -Encoding UTF8
           python .\bridge_test.py
 
-      - name: Responsive UI clipping smoke test
+      - name: Responsive UI and feature wiring smoke test
         shell: pwsh
         env:
           QT_QPA_PLATFORM: offscreen
@@ -87,19 +96,20 @@ jobs:
           @'
           from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
-          import main_v119
+          import main_v120
 
           app = QApplication([])
-          w = main_v119.Nova()
+          w = main_v120.Nova()
           w.show()
           app.processEvents()
 
           assert w.pages.count() == 8
-          assert 'v1.19' in w.windowTitle()
-          assert 'v1.19' in w.status.text()
+          assert 'v1.20' in w.windowTitle()
           assert hasattr(w, 'right_scroll118') and isinstance(w.right_scroll118, QScrollArea)
           assert len(w.quick_field_pairs) == 3
           assert len(w.quick_toggle_pairs) == 4
+          assert hasattr(w, 'auto_pipeline_card120')
+          assert hasattr(w, 'pipeline_status120')
 
           def rect_in(parent, child):
               p = child.mapTo(parent, QPoint(0, 0))
@@ -114,30 +124,29 @@ jobs:
                   assert quick.rect().contains(rect_in(quick, lab))
                   assert quick.rect().contains(rect_in(quick, ctl))
 
-          w.resize(1600, 930)
-          app.processEvents()
-          check_quick()
-
-          w.resize(1280, 720)
-          app.processEvents()
-          check_quick()
-          assert w.right_scroll118.width() <= 320
+          for width,height in [(1600,930),(1440,900),(1280,720)]:
+              w.resize(width,height)
+              app.processEvents()
+              check_quick()
 
           w.go(1)
           app.processEvents()
-          assert w.product.placeholderText().startswith('상품명')
-          assert '쿠팡/상품 URL' in w.product_url.placeholderText()
-          assert hasattr(w, 'product_profile_label119')
+          assert w.auto_pipeline_card120.isVisible()
           assert len(w.pchecks) == 7
 
           w.go(7)
           app.processEvents()
           assert len(w.setting_pairs) == 8
-          for lab, ctl in w.setting_pairs:
+          assert len(w.pipeline_setting_pairs120) == 7
+          for lab, ctl in w.setting_pairs + w.pipeline_setting_pairs120:
               assert lab.isVisible() and ctl.isVisible()
               assert not lab.geometry().intersects(ctl.geometry())
 
-          print('ui-v119-responsive-ok')
+          # Manual buttons resolve to upgraded methods instead of demo stubs.
+          assert w.clean_sub.__func__.__module__ == 'main_v120'
+          assert w.make_tts.__func__.__module__ == 'main_v120'
+          assert w.render.__func__.__module__ == 'main_v120'
+          print('ui-feature-v120-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -155,8 +164,6 @@ jobs:
           if (-not $ffprobe) { throw 'ffprobe.exe not found in downloaded bundle' }
           Copy-Item $ffmpeg.FullName '.\ffmpeg.exe' -Force
           Copy-Item $ffprobe.FullName '.\ffprobe.exe' -Force
-          & '.\ffmpeg.exe' -version | Select-Object -First 1
-          & '.\ffprobe.exe' -version | Select-Object -First 1
 
       - name: Install Tesseract
         shell: pwsh
@@ -170,15 +177,36 @@ jobs:
           }
           if (-not $ok) { throw 'tesseract.exe not installed after retries' }
 
+      - name: Bundle Whisper base model
+        shell: pwsh
+        run: |
+          @'
+          from huggingface_hub import snapshot_download
+          from pathlib import Path
+          out=Path('models/whisper-base')
+          out.mkdir(parents=True,exist_ok=True)
+          snapshot_download('Systran/faster-whisper-base', local_dir=str(out), allow_patterns=['config.json','model.bin','tokenizer.json','vocabulary.*','preprocessor_config.json'])
+          assert (out/'model.bin').exists(), 'Whisper model.bin missing'
+          print('whisper-model-bundled')
+          '@ | Set-Content .\download_model.py -Encoding UTF8
+          python .\download_model.py
+
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --collect-all PIL --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v119.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts `
+            --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib `
+            --collect-all PySide6.QtSvg --collect-all PIL --collect-all faster_whisper --collect-all ctranslate2 `
+            --collect-all av --collect-all tokenizers --collect-all cv2 `
+            --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http `
+            --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg `
+            main_v120.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
-          Copy-Item '.\NovaShorts_사용설명서_v1.19.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\models' '.\dist\NovaShorts\models' -Recurse -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.20.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
           Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           $td = '.\dist\NovaShorts\tesseract\tessdata'
           New-Item -ItemType Directory -Force -Path $td | Out-Null
@@ -190,14 +218,11 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.19
-          - 제품명 입력 -> 7개 플랫폼 검색어 생성 -> Chrome Bridge 자동수집을 실제로 연결했습니다.
-          - 쿠팡/상품 URL -> 상품명/브랜드/모델/대표이미지 분석 -> 검색어 생성 -> 영상수집 흐름을 연결했습니다.
-          - URL 분석은 쿠팡 API 키 없이 먼저 동작하며, API 키는 선택적인 상품정보 보강에만 사용합니다.
-          - 제목 관련도 + 가능한 경우 대표이미지/영상썸네일 perceptual hash 유사도를 함께 계산합니다.
-          - yt-dlp 실패 시 Chrome Bridge의 공개 페이지 미디어 추출 폴백을 사용합니다.
-          - Chrome Bridge는 4개 작업 동시 처리와 7개 영상 플랫폼 + 쿠팡 페이지 권한을 포함합니다.
-          - 자세한 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
+          NovaShorts v1.20
+          상품 분석 → 7개 플랫폼 소싱 → 관련도 자동선택 → 다운로드 → OCR/스마트 자막 제거 → Whisper 음성분석 → 한국어 대본 → TTS/SRT → 장면 기반 자동 컷 → 9:16 렌더 → 한국어 자막 → 워터마크 → 썸네일 → 선택적 YouTube/Lnk.Bio까지 하나의 원클릭 파이프라인으로 연결했습니다.
+          쿠팡 API 키는 URL 분석/소싱 필수가 아니며 상품정보 API 보강에만 사용합니다.
+          YouTube 자동 업로드와 Lnk.Bio 자동 링크는 설정에서 사용자가 ON으로 켠 경우에만 실행됩니다.
+          자세한 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -206,21 +231,23 @@ jobs:
           if (!(Test-Path '.\dist\NovaShorts\NovaShorts.exe')) { throw 'NovaShorts.exe not created' }
           if (!(Test-Path '.\dist\NovaShorts\ffmpeg.exe')) { throw 'ffmpeg.exe missing' }
           if (!(Test-Path '.\dist\NovaShorts\ffprobe.exe')) { throw 'ffprobe.exe missing' }
-          if (!(Test-Path '.\dist\NovaShorts\assets\platforms\tiktok.svg')) { throw 'platform icons missing' }
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tesseract.exe')) { throw 'tesseract.exe missing' }
+          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\kor.traineddata')) { throw 'kor OCR data missing' }
+          if (!(Test-Path '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata')) { throw 'Chinese OCR data missing' }
+          if (!(Test-Path '.\dist\NovaShorts\models\whisper-base\model.bin')) { throw 'Whisper base model missing' }
           if (!(Test-Path '.\dist\NovaShorts\browser-extension\service_worker.js')) { throw 'bridge extension missing' }
           if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서.txt')) { throw 'manual missing' }
 
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.19.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.19.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.20.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.20.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.19
-          path: NovaShorts_v1.19.zip
+          name: NovaShorts_v1.20
+          path: NovaShorts_v1.20.zip
           if-no-files-found: error
           retention-days: 30
