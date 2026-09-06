@@ -8,3 +8,7 @@ google-auth-httplib2>=0.2
 Pillow>=10
 imageio-ffmpeg>=0.5
 pyinstaller>=6.10
+opencv-python-headless>=4.10,<5
+numpy>=1.26,<3
+faster-whisper>=1.1,<2
+huggingface-hub>=0.30,<2
