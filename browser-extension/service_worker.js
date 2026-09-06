@@ -101,7 +101,7 @@ async function extractMedia(task){
     tab=await openTab(task.url,task.wait_ms||5200);
     const injected=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>{
       const out=[];const add=u=>{try{if(u){const x=new URL(u,location.href).href;if(/^https?:/i.test(x))out.push(x);}}catch(e){}};
-      document.querySelectorAll('video').forEach(v=>{add(v.currentSrc);add(v.src);if(v.poster)add(v.poster);});
+      document.querySelectorAll('video').forEach(v=>{add(v.currentSrc);add(v.src);});
       document.querySelectorAll('video source,source[type*="video"]').forEach(s=>add(s.src||s.getAttribute('src')));
       ['og:video','og:video:url','og:video:secure_url'].forEach(k=>add(document.querySelector(`meta[property="${k}"]`)?.content));
       try{performance.getEntriesByType('resource').forEach(e=>{if(/\.(mp4|m3u8|webm)(\?|$)/i.test(e.name)||/video/i.test(e.initiatorType||''))add(e.name);});}catch(e){}
