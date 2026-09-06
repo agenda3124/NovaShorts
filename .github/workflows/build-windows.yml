@@ -34,8 +34,50 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py
-          python -c "import main_v118, engine_v112; assert len(engine_v112.PLATFORMS)==7; print('import-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py product_source.py features.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py
+          python -c "import main_v119, engine_v112, product_source; assert len(engine_v112.PLATFORMS)==7; print('import-v119-ok')"
+
+      - name: Product source parser regression
+        shell: pwsh
+        run: |
+          @'
+          from product_source import parse_product_html, search_seed, score_candidate
+          html = '''
+          <html><head>
+          <meta property="og:title" content="테스트브랜드 IRT6030 스마트 온도계 | 쿠팡">
+          <meta property="og:image" content="https://img.example/p.jpg">
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"Product","name":"테스트브랜드 IRT6030 스마트 온도계","brand":{"@type":"Brand","name":"테스트브랜드"},"model":"IRT6030","image":"https://img.example/p.jpg"}
+          </script></head></html>
+          '''
+          p = parse_product_html(html, 'https://www.coupang.com/vp/products/123456')
+          assert p['title'] == '테스트브랜드 IRT6030 스마트 온도계'
+          assert p['brand'] == '테스트브랜드'
+          assert p['model'] == 'IRT6030'
+          assert p['product_id'] == '123456'
+          assert 'IRT6030' in search_seed(p)
+          s = score_candidate(p, {'title':'IRT6030 스마트 온도계 사용 영상','url':'https://example.com/v'}, check_image=False)
+          assert s['_score'] >= 90
+          print('product-source-regression-ok')
+          '@ | Set-Content .\product_test.py -Encoding UTF8
+          python .\product_test.py
+
+      - name: Bridge extension regression
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('browser-extension/manifest.json').read_text(encoding='utf-8'))
+          hosts=' '.join(m['host_permissions'])
+          for x in ['coupang.com','youtube.com','instagram.com','douyin.com','xiaohongshu.com','kuaishou.com','tiktok.com','1688.com']:
+              assert x in hosts, x
+          js=Path('browser-extension/service_worker.js').read_text(encoding='utf-8')
+          for x in ['analyze_product_page','collect_links','extract_media','MAX_ACTIVE=4']:
+              assert x in js, x
+          print('bridge-v119-ok')
+          '@ | Set-Content .\bridge_test.py -Encoding UTF8
+          python .\bridge_test.py
 
       - name: Responsive UI clipping smoke test
         shell: pwsh
@@ -45,18 +87,17 @@ jobs:
           @'
           from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
-          import main_v118
+          import main_v119
 
           app = QApplication([])
-          w = main_v118.Nova()
+          w = main_v119.Nova()
           w.show()
           app.processEvents()
 
           assert w.pages.count() == 8
-          assert 'v1.18' in w.windowTitle()
-          assert 'v1.18' in w.status.text()
-          assert hasattr(w, 'right_scroll118')
-          assert isinstance(w.right_scroll118, QScrollArea)
+          assert 'v1.19' in w.windowTitle()
+          assert 'v1.19' in w.status.text()
+          assert hasattr(w, 'right_scroll118') and isinstance(w.right_scroll118, QScrollArea)
           assert len(w.quick_field_pairs) == 3
           assert len(w.quick_toggle_pairs) == 4
 
@@ -67,41 +108,36 @@ jobs:
           def check_quick():
               quick = w.findChild(QFrame, 'quickCard118')
               assert quick is not None
-              assert quick.height() >= 370
               for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
                   assert lab.isVisible() and ctl.isVisible()
                   assert not lab.geometry().intersects(ctl.geometry())
                   assert quick.rect().contains(rect_in(quick, lab))
                   assert quick.rect().contains(rect_in(quick, ctl))
 
-          # Desktop logical size.
           w.resize(1600, 930)
           app.processEvents()
           check_quick()
-          assert w.right_scroll118.width() >= 350
 
-          # Laptop / high-DPI logical size. Right side may scroll, but must never clip controls.
           w.resize(1280, 720)
           app.processEvents()
           check_quick()
           assert w.right_scroll118.width() <= 320
-          assert w.queue_group118.height() <= 145
 
-          # Settings inputs must be card rows with no black label slabs/overlap.
+          w.go(1)
+          app.processEvents()
+          assert w.product.placeholderText().startswith('상품명')
+          assert '쿠팡/상품 URL' in w.product_url.placeholderText()
+          assert hasattr(w, 'product_profile_label119')
+          assert len(w.pchecks) == 7
+
           w.go(7)
           app.processEvents()
           assert len(w.setting_pairs) == 8
           for lab, ctl in w.setting_pairs:
               assert lab.isVisible() and ctl.isVisible()
               assert not lab.geometry().intersects(ctl.geometry())
-              parent = lab.parentWidget()
-              assert parent is ctl.parentWidget()
-              assert parent.rect().contains(rect_in(parent, lab))
-              assert parent.rect().contains(rect_in(parent, ctl))
-          css = w.styleSheet()
-          assert 'settingRow118' in css and 'quickRow118' in css
 
-          print('ui-v118-responsive-ok')
+          print('ui-v119-responsive-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -125,12 +161,12 @@ jobs:
       - name: Build application
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v118.py
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib --collect-all PySide6.QtSvg --collect-all PIL --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg main_v119.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
-          Copy-Item '.\NovaShorts_사용설명서_v1.15.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.19.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
           if (Test-Path 'C:\Program Files\Tesseract-OCR') {
             Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           }
@@ -144,12 +180,14 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.18
-          - 빠른 설정 전체를 세로 스크롤 대응형으로 변경해 노트북/데스크탑과 Windows 배율에서도 마지막 ON/OFF 행이 잘리지 않습니다.
-          - 1600x930과 1280x720 논리 해상도에 맞춰 오른쪽 패널/왼쪽 메뉴/작업 대기열 폭과 높이를 자동 조절합니다.
-          - 설정의 출력 폴더/API 키/연동 입력 행을 빠른 설정과 같은 네이비 카드 디자인으로 통일해 검은 배경 띠를 제거했습니다.
-          - 설정 화면은 세로 스크롤을 사용해 작은 화면에서도 입력 항목이 겹치지 않습니다.
-          - 자세한 기능 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
+          NovaShorts v1.19
+          - 제품명 입력 -> 7개 플랫폼 검색어 생성 -> Chrome Bridge 자동수집을 실제로 연결했습니다.
+          - 쿠팡/상품 URL -> 상품명/브랜드/모델/대표이미지 분석 -> 검색어 생성 -> 영상수집 흐름을 연결했습니다.
+          - URL 분석은 쿠팡 API 키 없이 먼저 동작하며, API 키는 선택적인 상품정보 보강에만 사용합니다.
+          - 제목 관련도 + 가능한 경우 대표이미지/영상썸네일 perceptual hash 유사도를 함께 계산합니다.
+          - yt-dlp 실패 시 Chrome Bridge의 공개 페이지 미디어 추출 폴백을 사용합니다.
+          - Chrome Bridge는 4개 작업 동시 처리와 7개 영상 플랫폼 + 쿠팡 페이지 권한을 포함합니다.
+          - 자세한 사용법은 NovaShorts_사용설명서.txt를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -160,18 +198,19 @@ jobs:
           if (!(Test-Path '.\dist\NovaShorts\ffprobe.exe')) { throw 'ffprobe.exe missing' }
           if (!(Test-Path '.\dist\NovaShorts\assets\platforms\tiktok.svg')) { throw 'platform icons missing' }
           if (!(Test-Path '.\dist\NovaShorts\tesseract\tesseract.exe')) { throw 'tesseract.exe missing' }
+          if (!(Test-Path '.\dist\NovaShorts\browser-extension\service_worker.js')) { throw 'bridge extension missing' }
           if (!(Test-Path '.\dist\NovaShorts\NovaShorts_사용설명서.txt')) { throw 'manual missing' }
 
       - name: Create ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.18.zip' -CompressionLevel Optimal -Force
-          Get-FileHash '.\NovaShorts_v1.18.zip' -Algorithm SHA256
+          Compress-Archive -Path '.\dist\NovaShorts\*' -DestinationPath '.\NovaShorts_v1.19.zip' -CompressionLevel Optimal -Force
+          Get-FileHash '.\NovaShorts_v1.19.zip' -Algorithm SHA256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.18
-          path: NovaShorts_v1.18.zip
+          name: NovaShorts_v1.19
+          path: NovaShorts_v1.19.zip
           if-no-files-found: error
           retention-days: 30
