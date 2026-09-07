@@ -17,23 +17,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download verified v1.22 artifact
+      - name: Download verified direct ZIP
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p package
-          gh run download 34102047189 --repo agenda3124/NovaShorts --name NovaShorts_v1.22_DIRECT --dir package
-          test -f package/NovaShorts.exe
-          test -f package/ffmpeg.exe
-          test -f package/ffprobe.exe
-          test -f package/models/whisper-base/model.bin
-
-      - name: Create direct ZIP
-        run: |
-          cd package
-          zip -r -9 ../NovaShorts_v1.22_DIRECT.zip .
-          cd ..
+          gh api -H 'Accept: application/vnd.github+json' repos/agenda3124/NovaShorts/actions/artifacts/10010996470/zip > NovaShorts_v1.22_DIRECT.zip
           unzip -t NovaShorts_v1.22_DIRECT.zip >/dev/null
+          unzip -l NovaShorts_v1.22_DIRECT.zip | grep -q 'NovaShorts.exe'
+          unzip -l NovaShorts_v1.22_DIRECT.zip | grep -q 'ffmpeg.exe'
+          unzip -l NovaShorts_v1.22_DIRECT.zip | grep -q 'models/whisper-base/model.bin'
           ls -lh NovaShorts_v1.22_DIRECT.zip
 
       - name: Publish GitHub Release
