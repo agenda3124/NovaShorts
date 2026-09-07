@@ -1,0 +1,48 @@
+name: Capture NovaShorts UI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'capture_ui_v122.py'
+      - '.github/workflows/capture-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-build.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Capture actual v1.22 UI
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python capture_ui_v122.py
+          if (!(Test-Path '.\NovaShorts_v1.22_ACTUAL_UI.png')) { throw 'screenshot missing' }
+
+      - name: Upload UI screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaShorts_v1.22_ACTUAL_UI
+          path: NovaShorts_v1.22_ACTUAL_UI.png
+          if-no-files-found: error
+          retention-days: 30
