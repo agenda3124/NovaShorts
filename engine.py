@@ -8,19 +8,27 @@ from typing import Callable
 import requests
 
 APP_NAME='NovaShorts'
-APP_VERSION='1.20'
+APP_VERSION='1.22'
 HOME=Path.home()/'.novashorts'
 SETTINGS_FILE=HOME/'settings.json'
 LOG_FILE=HOME/'logs'/'novashorts.log'
 DEFAULT_OUTPUT=Path.home()/'Videos'/'NovaShorts'
 
 PLATFORMS={
+ 'TikTok':'site:tiktok.com/@ /video/',
+ 'YouTube':'site:youtube.com/shorts OR site:youtube.com/watch',
+ 'Instagram':'site:instagram.com/reel',
  'Douyin':'site:douyin.com/video',
  'Xiaohongshu':'site:xiaohongshu.com/explore',
  'Kuaishou':'site:kuaishou.com/short-video',
- 'TikTok':'site:tiktok.com/@ /video/',
  '1688':'site:1688.com',
 }
+
+SECRET_FIELDS=(
+ 'gemini_api_key','coupang_access_key','coupang_secret_key',
+ 'lnkbio_client_id','lnkbio_client_secret'
+)
+KEYRING_SERVICE='NovaShorts'
 
 @dataclass
 class Settings:
@@ -60,9 +68,20 @@ class Settings:
  pipeline_add_korean_subtitles:bool=True
  pipeline_auto_thumbnail:bool=True
  pipeline_target_seconds:int=20
+ pipeline_video_analysis:bool=True
+ pipeline_audio_analysis:bool=True
+ pipeline_translate_source:bool=True
+ pipeline_validate_output:bool=True
+ pipeline_render_repair:bool=True
+ pipeline_auto_tts_speed:bool=True
+ pipeline_mix_sources:bool=True
+ pipeline_semantic_validation:bool=True
+ pipeline_video_validation_ai:bool=True
+ source_candidate_limit:int=60
  bridge_token:str=''
  def __post_init__(self):
   if self.platform_sources is None:self.platform_sources=list(PLATFORMS)
+  else:self.platform_sources=[p for p in self.platform_sources if p in PLATFORMS] or list(PLATFORMS)
   if not self.bridge_token:self.bridge_token=secrets.token_urlsafe(24)
 
 def ensure_dirs():
@@ -72,17 +91,45 @@ def log(msg:str):
  ensure_dirs(); line=f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
  with LOG_FILE.open('a',encoding='utf-8') as f:f.write(line+'\n')
 
-def load_settings()->Settings:
- ensure_dirs()
- if not SETTINGS_FILE.exists():
-  s=Settings();save_settings(s);return s
+def _keyring_get(name:str)->str:
  try:
-  raw=json.loads(SETTINGS_FILE.read_text(encoding='utf-8')); allowed=Settings.__dataclass_fields__.keys()
-  return Settings(**{k:v for k,v in raw.items() if k in allowed})
- except Exception as e:log(f'settings load: {e}');return Settings()
+  import keyring
+  return keyring.get_password(KEYRING_SERVICE,name) or ''
+ except Exception:return ''
+
+def _keyring_set(name:str,value:str)->bool:
+ try:
+  import keyring
+  if value:keyring.set_password(KEYRING_SERVICE,name,value)
+  else:
+   try:keyring.delete_password(KEYRING_SERVICE,name)
+   except Exception:pass
+  return True
+ except Exception:return False
+
+def load_settings()->Settings:
+ ensure_dirs(); raw={}
+ if SETTINGS_FILE.exists():
+  try:raw=json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
+  except Exception as e:log(f'settings load: {e}');raw={}
+ allowed=Settings.__dataclass_fields__.keys()
+ s=Settings(**{k:v for k,v in raw.items() if k in allowed})
+ migrated=False
+ for name in SECRET_FIELDS:
+  kr=_keyring_get(name)
+  if kr:setattr(s,name,kr)
+  else:
+   old=str(raw.get(name) or '')
+   if old and _keyring_set(name,old):setattr(s,name,old);migrated=True
+ if not SETTINGS_FILE.exists() or migrated:save_settings(s)
+ return s
 
 def save_settings(s:Settings):
- ensure_dirs();SETTINGS_FILE.write_text(json.dumps(asdict(s),ensure_ascii=False,indent=2),encoding='utf-8')
+ ensure_dirs(); data=asdict(s)
+ for name in SECRET_FIELDS:
+  value=str(getattr(s,name,'') or '')
+  if _keyring_set(name,value):data[name]=''
+ SETTINGS_FILE.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
 
 def app_dir()->Path:
  if getattr(sys,'frozen',False):return Path(sys.executable).parent
@@ -107,8 +154,11 @@ def diagnostics()->dict:
  try:
   import faster_whisper; fw=True
  except Exception:fw=False
+ try:
+  import keyring; kr=True
+ except Exception:kr=False
  model_dir=app_dir()/'models'/'whisper-base'
- return {'ffmpeg':bool(tool('ffmpeg')),'ffprobe':bool(tool('ffprobe')),'tesseract':bool(tool('tesseract')),'yt_dlp':yd,'opencv':cv,'faster_whisper':fw,'whisper_model':model_dir.exists(),'chrome_bridge':True}
+ return {'ffmpeg':bool(tool('ffmpeg')),'ffprobe':bool(tool('ffprobe')),'tesseract':bool(tool('tesseract')),'yt_dlp':yd,'opencv':cv,'faster_whisper':fw,'whisper_model':model_dir.exists(),'keyring':kr,'chrome_bridge':True}
 
 def normalize_title(t:str)->str:
  t=re.sub(r'\[[^\]]+\]|\([^\)]+\)',' ',t);t=re.sub(r'\b(무료배송|로켓배송|당일배송|정품|국내배송)\b',' ',t,flags=re.I)
@@ -118,11 +168,18 @@ def tokens(t:str)->list[str]:return [x for x in re.findall(r'[가-힣A-Za-z0-9�
 
 def rule_query_plan(title:str)->dict[str,list[str]]:
  base=' '.join(tokens(normalize_title(title))[:7]) or title
- return {'Douyin':[base,base+' 测评',base+' 使用'],'Xiaohongshu':[base,base+' 好物',base+' 测评'],'Kuaishou':[base,base+' 使用',base+' 推荐'],'TikTok':[base,base+' review',base+' demo'],'1688':[base,base+' 视频',base+' 详情']}
+ return {
+  'TikTok':[base,base+' review',base+' demo'],
+  'YouTube':[base+' shorts',base+' review',base+' demo'],
+  'Instagram':[base+' reels',base+' review',base+' demo'],
+  'Douyin':[base,base+' 测评',base+' 使用'],
+  'Xiaohongshu':[base,base+' 好物',base+' 测评'],
+  'Kuaishou':[base,base+' 使用',base+' 推荐'],
+  '1688':[base,base+' 视频',base+' 详情']}
 
 def gemini_query_plan(title:str,key:str)->dict[str,list[str]]:
  if not key:return rule_query_plan(title)
- prompt='Return JSON only with keys Douyin, Xiaohongshu, Kuaishou, TikTok, 1688. Each value must contain 3 concise product video search strings. Use Simplified Chinese for Chinese platforms and English for TikTok. Product: '+title
+ prompt='Return JSON only with keys TikTok, YouTube, Instagram, Douyin, Xiaohongshu, Kuaishou, 1688. Each value must contain 3 concise product video search strings. Use Simplified Chinese for Chinese platforms and English for TikTok, YouTube and Instagram. Product: '+title
  try:
   r=requests.post('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',params={'key':key},json={'contents':[{'parts':[{'text':prompt}]}]},timeout=30);r.raise_for_status()
   text=r.json()['candidates'][0]['content']['parts'][0]['text'];text=re.sub(r'^```(?:json)?|```$','',text.strip(),flags=re.M).strip();d=json.loads(text)
@@ -131,7 +188,7 @@ def gemini_query_plan(title:str,key:str)->dict[str,list[str]]:
 
 def direct_search_url(p:str,q:str)->str:
  x=urllib.parse.quote(q)
- return {'Douyin':f'https://www.douyin.com/search/{x}?type=video','Xiaohongshu':f'https://www.xiaohongshu.com/search_result?keyword={x}&source=web_search_result_notes','Kuaishou':f'https://www.kuaishou.com/search/video?searchKey={x}','TikTok':f'https://www.tiktok.com/search/video?q={x}','1688':f'https://s.1688.com/selloffer/offer_search.htm?keywords={x}'}[p]
+ return {'TikTok':f'https://www.tiktok.com/search/video?q={x}','YouTube':f'https://www.youtube.com/results?search_query={x}','Instagram':f'https://www.instagram.com/explore/search/keyword/?q={x}','Douyin':f'https://www.douyin.com/search/{x}?type=video','Xiaohongshu':f'https://www.xiaohongshu.com/search_result?keyword={x}&source=web_search_result_notes','Kuaishou':f'https://www.kuaishou.com/search/video?searchKey={x}','1688':f'https://s.1688.com/selloffer/offer_search.htm?keywords={x}'}[p]
 
 def external_search_url(p:str,q:str)->str:return 'https://www.google.com/search?q='+urllib.parse.quote_plus(PLATFORMS[p]+' '+q)
 
@@ -143,12 +200,8 @@ def relevance(product:str,candidate:str)->int:
 
 def coupang_search(keyword:str,access:str,secret:str,limit:int=10)->dict:
  if not access or not secret:raise RuntimeError('쿠팡 Access/Secret Key를 설정하세요.')
- path='/v2/providers/affiliate_open_api/apis/openapi/products/search'
- query=urllib.parse.urlencode({'keyword':keyword,'limit':limit})
- method='GET';dt=time.strftime('%y%m%dT%H%M%SZ',time.gmtime())
- message=dt+method+path+query
- signature=hmac.new(secret.encode(),message.encode(),hashlib.sha256).hexdigest()
- auth=f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={signature}'
+ path='/v2/providers/affiliate_open_api/apis/openapi/products/search';query=urllib.parse.urlencode({'keyword':keyword,'limit':limit});method='GET';dt=time.strftime('%y%m%dT%H%M%SZ',time.gmtime());message=dt+method+path+query
+ signature=hmac.new(secret.encode(),message.encode(),hashlib.sha256).hexdigest();auth=f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={dt}, signature={signature}'
  r=requests.get('https://api-gateway.coupang.com'+path+'?'+query,headers={'Authorization':auth},timeout=20);r.raise_for_status();return r.json()
 
 def download_video(url:str,out_dir:str,progress:Callable[[str],None]|None=None)->Path:
@@ -156,7 +209,7 @@ def download_video(url:str,out_dir:str,progress:Callable[[str],None]|None=None)-
  out=Path(out_dir);out.mkdir(parents=True,exist_ok=True);before=set(out.iterdir())
  def hook(d):
   if progress and d.get('status')=='downloading':progress('다운로드 '+d.get('_percent_str','').strip())
- opts={'outtmpl':str(out/'%(title).120s_%(id)s.%(ext)s'),'noplaylist':True,'merge_output_format':'mp4','quiet':True,'no_warnings':True}
+ opts={'outtmpl':str(out/'%(title).120s_%(id)s.%(ext)s'),'noplaylist':True,'merge_output_format':'mp4','quiet':True,'no_warnings':True,'progress_hooks':[hook]}
  ff=tool('ffmpeg')
  if ff:opts['ffmpeg_location']=str(Path(ff).parent)
  with yt_dlp.YoutubeDL(opts) as y:y.download([url])
@@ -188,7 +241,7 @@ def extract_frames(video:str,out_dir:str,fps=.5)->list[Path]:
 def tesseract_text(img:str,lang='chi_sim+kor+eng')->str:
  exe=tool('tesseract')
  if not exe:raise RuntimeError('Tesseract를 찾을 수 없습니다.')
- env=os.environ.copy(); td=Path(exe).parent/'tessdata'
+ env=os.environ.copy();td=Path(exe).parent/'tessdata'
  if td.exists():env['TESSDATA_PREFIX']=str(td)
  p=subprocess.run([exe,img,'stdout','-l',lang,'--psm','6'],capture_output=True,text=True,encoding='utf-8',errors='replace',env=env)
  if p.returncode:raise RuntimeError(p.stderr[-1200:])
@@ -223,15 +276,38 @@ def watermark(video,text,out,pos='bottom_right'):
  safe=text.replace("'","\\'").replace(':','\\:');vf=f"drawtext=text='{safe}':fontcolor=white:fontsize=30:borderw=2:bordercolor=black@0.6:{xy}"
  _run_ffmpeg(['-y','-i',video,'-vf',vf,'-c:a','copy',out]);return out
 
-def youtube_upload(video,secret_file,title,description,tags,privacy='private')->str:
+def _youtube_credentials(secret_file:str):
+ from google.auth.transport.requests import Request
+ from google.oauth2.credentials import Credentials
  from google_auth_oauthlib.flow import InstalledAppFlow
+ scopes=['https://www.googleapis.com/auth/youtube.upload','https://www.googleapis.com/auth/youtube.force-ssl']
+ token_file=HOME/'youtube_token.json';creds=None
+ if token_file.exists():
+  try:creds=Credentials.from_authorized_user_file(str(token_file),scopes)
+  except Exception as e:log('youtube token load: '+str(e))
+ if creds and creds.expired and creds.refresh_token:
+  try:creds.refresh(Request())
+  except Exception as e:log('youtube token refresh: '+str(e));creds=None
+ if not creds or not creds.valid:
+  creds=InstalledAppFlow.from_client_secrets_file(secret_file,scopes).run_local_server(port=0)
+ try:token_file.write_text(creds.to_json(),encoding='utf-8')
+ except Exception as e:log('youtube token save: '+str(e))
+ return creds
+
+def youtube_upload(video,secret_file,title,description,tags,privacy='private')->str:
  from googleapiclient.discovery import build
  from googleapiclient.http import MediaFileUpload
- scopes=['https://www.googleapis.com/auth/youtube.upload','https://www.googleapis.com/auth/youtube.force-ssl'];creds=InstalledAppFlow.from_client_secrets_file(secret_file,scopes).run_local_server(port=0);yt=build('youtube','v3',credentials=creds)
+ creds=_youtube_credentials(secret_file);yt=build('youtube','v3',credentials=creds)
  body={'snippet':{'title':title,'description':description,'tags':tags,'categoryId':'22'},'status':{'privacyStatus':privacy,'selfDeclaredMadeForKids':False}}
  req=yt.videos().insert(part='snippet,status',body=body,media_body=MediaFileUpload(video,chunksize=-1,resumable=True));resp=None
  while resp is None:_,resp=req.next_chunk()
  return resp['id']
+
+def youtube_comment(video_id:str,secret_file:str,text:str)->dict:
+ from googleapiclient.discovery import build
+ creds=_youtube_credentials(secret_file);yt=build('youtube','v3',credentials=creds)
+ body={'snippet':{'videoId':video_id,'topLevelComment':{'snippet':{'textOriginal':text}}}}
+ return yt.commentThreads().insert(part='snippet',body=body).execute()
 
 def lnk_bio_add(cid,secret,title,url)->dict:
  t=requests.post('https://lnk.bio/oauth/token',data={'grant_type':'client_credentials','client_id':cid,'client_secret':secret},timeout=20);t.raise_for_status();access=t.json().get('access_token')
