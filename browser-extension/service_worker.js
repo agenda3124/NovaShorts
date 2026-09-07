@@ -36,6 +36,7 @@ function unwrapUrl(raw){
   }catch(e){}
   return raw||'';
 }
+function isGoogle(raw){try{return /google\./i.test(new URL(raw).hostname);}catch(e){return false;}}
 async function openTab(url){return chrome.tabs.create({url,active:false});}
 async function closeTab(tab){try{if(tab&&tab.id)await chrome.tabs.remove(tab.id);}catch(e){}}
 
@@ -71,9 +72,13 @@ async function waitAndCollect(tabId,maxMs=14000){
   }});
   return (injected[0]&&injected[0].result)||{anchors:[],body:'',title:'',url:''};
 }
-function classifyEmpty(page){
+function classifyEmpty(page,external=false){
   const t=((page.title||'')+' '+(page.body||'')).toLowerCase();
   if(/access denied|forbidden|request blocked|too many requests|403/.test(t))return {status:'blocked',note:'접근 차단/검증 페이지'};
+  if(external){
+    if(/captcha|verify|verification|验证|robot|人机验证/.test(t))return {status:'blocked',note:'외부 검색 검증 필요'};
+    return {status:'empty',note:'검색 결과 링크를 찾지 못함'};
+  }
   if(/login|log in|sign in|로그인|登录|登入|扫码|请登录|captcha|verify|verification|验证|robot|人机验证/.test(t))return {status:'login_required',note:'로그인 또는 추가 인증 필요 가능성'};
   return {status:'empty',note:'검색 결과 링크를 찾지 못함'};
 }
@@ -90,7 +95,7 @@ async function collect(task){
       seen.add(u);results.push({...x,url:u,platform:task.platform,keyword:task.keyword});
       if(results.length>=80)break;
     }
-    const empty=results.length?{status:'ok',note:`${results.length}개 영상 링크`}:classifyEmpty(page);
+    const empty=results.length?{status:'ok',note:`${results.length}개 영상 링크`}:classifyEmpty(page,isGoogle(task.url));
     await api('/v1/results',{method:'POST',body:JSON.stringify({task,items:results,status:empty.status,note:empty.note,pageTitle:page.title||''})});
   }catch(e){
     await api('/v1/results',{method:'POST',body:JSON.stringify({task,items:[],status:'error',note:String(e),error:String(e)})});
