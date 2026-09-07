@@ -9,8 +9,6 @@ import browser_cdp as _base
 import browser_cdp_v122 as _launcher
 from engine import log
 
-# Keep the v1.22 dedicated-profile launcher (bundled extension, persistent login),
-# but replace the fixed-delay link collector with an adaptive search collector.
 ensure_browser = _launcher.ensure_browser
 _base.ensure_browser = ensure_browser
 status = _base.status
@@ -23,11 +21,11 @@ _LOGIN_MARKERS = (
     'login', 'log in', 'sign in', '로그인', '登录', '登入', '扫码', '请登录',
     'captcha', 'verify', 'verification', '验证', '安全验证', 'robot', '人机验证',
 )
+_VERIFY_MARKERS = ('captcha', 'verify', 'verification', '验证', '安全验证', 'robot', '人机验证')
 _BLOCK_MARKERS = ('access denied', 'forbidden', 'request blocked', 'too many requests', '403')
 
 
 def unwrap_search_url(url: str) -> str:
-    """Unwrap Google result redirects into the actual platform URL."""
     raw = str(url or '').strip()
     if not raw:
         return ''
@@ -42,6 +40,13 @@ def unwrap_search_url(url: str) -> str:
     except Exception:
         pass
     return raw
+
+
+def _is_google_url(url: str) -> bool:
+    try:
+        return 'google.' in (urllib.parse.urlparse(str(url or '')).netloc or '').lower()
+    except Exception:
+        return False
 
 
 def _page_state(tab: dict) -> dict[str, Any]:
@@ -59,7 +64,6 @@ def _page_state(tab: dict) -> dict[str, Any]:
 
 
 def _adaptive_wait(tab: dict, max_seconds: float = 14.0) -> dict[str, Any]:
-    """Wait for dynamic result pages until anchor count stabilizes instead of sleeping 4-5s."""
     end = time.time() + max(4.0, float(max_seconds))
     last = -1
     stable = 0
@@ -68,11 +72,7 @@ def _adaptive_wait(tab: dict, max_seconds: float = 14.0) -> dict[str, Any]:
         state = _page_state(tab)
         n = int(state.get('anchors') or 0)
         if state.get('ready') in ('interactive', 'complete') and n >= 12:
-            if n == last:
-                stable += 1
-            else:
-                stable = 0
-            # Two stable samples is enough on a normal results page; slow pages keep waiting.
+            stable = stable + 1 if n == last else 0
             if stable >= 2:
                 break
         last = n
@@ -112,22 +112,23 @@ def _extract_anchor_rows(tab: dict) -> list[dict]:
         return []
 
 
-def _classify_empty(state: dict, error: str = '') -> tuple[str, str]:
+def _classify_empty(state: dict, error: str = '', external_search: bool = False) -> tuple[str, str]:
     text = (' '.join([
         str(state.get('title') or ''), str(state.get('body') or ''), str(error or '')
     ])).lower()
     if any(x in text for x in _BLOCK_MARKERS):
         return 'blocked', '접근 차단/검증 페이지'
-    if any(x in text for x in _LOGIN_MARKERS):
-        return 'login_required', '로그인 또는 추가 인증 필요 가능성'
+    markers = _VERIFY_MARKERS if external_search else _LOGIN_MARKERS
+    if any(x in text for x in markers):
+        return ('blocked', '외부 검색 검증 필요') if external_search else ('login_required', '로그인 또는 추가 인증 필요 가능성')
     if error:
         return 'error', str(error)[:180]
     return 'empty', '검색 결과 링크를 찾지 못함'
 
 
 def collect_links_detailed(platform: str, url: str, keyword: str = '', wait_seconds: float = 14.0) -> dict:
-    """Collect platform result URLs and return diagnostics for zero-result troubleshooting."""
     tab = None
+    external = _is_google_url(url)
     try:
         tab = _base._new_tab(url)
         state = _adaptive_wait(tab, max(wait_seconds, 10.0))
@@ -156,7 +157,7 @@ def collect_links_detailed(platform: str, url: str, keyword: str = '', wait_seco
                 'page_title': str(state.get('title') or ''),
                 'final_url': str(state.get('url') or url),
             }
-        st, note = _classify_empty(state)
+        st, note = _classify_empty(state, external_search=external)
         return {
             'items': [], 'status': st, 'note': note,
             'anchor_count': len(raw_rows),
@@ -165,7 +166,7 @@ def collect_links_detailed(platform: str, url: str, keyword: str = '', wait_seco
         }
     except Exception as e:
         state = _page_state(tab) if tab else {}
-        st, note = _classify_empty(state, str(e))
+        st, note = _classify_empty(state, str(e), external_search=external)
         return {'items': [], 'status': st, 'note': note, 'error': str(e), 'anchor_count': 0, 'page_title': str(state.get('title') or ''), 'final_url': str(state.get('url') or url)}
     finally:
         if tab:
@@ -178,5 +179,4 @@ def collect_links_detailed(platform: str, url: str, keyword: str = '', wait_seco
 def collect_links(platform: str, url: str, keyword: str = '', wait_seconds: float = 14.0) -> list[dict]:
     return list(collect_links_detailed(platform, url, keyword, wait_seconds).get('items') or [])
 
-# Patch legacy callers too.
 _base.collect_links = collect_links
