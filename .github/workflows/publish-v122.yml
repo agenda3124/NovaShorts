@@ -1,0 +1,47 @@
+name: Publish NovaShorts v1.22 Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/publish-v122.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download verified v1.22 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p package
+          gh run download 34102047189 --repo agenda3124/NovaShorts --name NovaShorts_v1.22_DIRECT --dir package
+          test -f package/NovaShorts.exe
+          test -f package/ffmpeg.exe
+          test -f package/ffprobe.exe
+          test -f package/models/whisper-base/model.bin
+
+      - name: Create direct ZIP
+        run: |
+          cd package
+          zip -r -9 ../NovaShorts_v1.22_DIRECT.zip .
+          cd ..
+          unzip -t NovaShorts_v1.22_DIRECT.zip >/dev/null
+          ls -lh NovaShorts_v1.22_DIRECT.zip
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.22 --repo agenda3124/NovaShorts >/dev/null 2>&1; then
+            gh release upload v1.22 NovaShorts_v1.22_DIRECT.zip --repo agenda3124/NovaShorts --clobber
+          else
+            gh release create v1.22 NovaShorts_v1.22_DIRECT.zip --repo agenda3124/NovaShorts --title 'NovaShorts v1.22' --notes 'SSMaker 기능 전수 교차검증 기반 clean-room 구현 및 전체 제작 파이프라인 연결 버전. Windows DIRECT 패키지이며 한 번 압축 해제 후 NovaShorts.exe를 실행하면 됩니다.'
+          fi
