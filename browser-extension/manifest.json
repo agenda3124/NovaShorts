@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "NovaShorts Bridge",
-  "version": "1.9.0",
-  "description": "Collects public product/video metadata for NovaShorts through the local bridge.",
+  "version": "1.22.0",
+  "description": "Pairs automatically with the local NovaShorts app and collects public product/video metadata.",
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "http://127.0.0.1:38471/*",
