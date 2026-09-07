@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   capture:
@@ -46,3 +46,13 @@ jobs:
           path: NovaShorts_v1.22_ACTUAL_UI.png
           if-no-files-found: error
           retention-days: 30
+
+      - name: Commit actual screenshot to repository
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path '.\docs' | Out-Null
+          Copy-Item '.\NovaShorts_v1.22_ACTUAL_UI.png' '.\docs\NovaShorts_v1.22_ACTUAL_UI.png' -Force
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add '.\docs\NovaShorts_v1.22_ACTUAL_UI.png'
+          if (git diff --cached --quiet) { Write-Host 'No screenshot changes' } else { git commit -m 'Add actual NovaShorts v1.22 UI screenshot'; git push }
