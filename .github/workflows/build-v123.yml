@@ -1,0 +1,187 @@
+name: Build NovaShorts v1.23
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  HF_HUB_DISABLE_SYMLINKS_WARNING: '1'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-build.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      - name: Syntax and import check
+        shell: pwsh
+        run: |
+          python -m py_compile browser_cdp_v123.py sourcing_v123.py main_v123.py main_v122.py pipeline_v122.py parity_v122.py engine.py bridge.py
+          python -c "import main_v123, sourcing_v123, browser_cdp_v123; assert main_v123.VERSION=='1.23'; assert len(sourcing_v123.PLATFORMS)==7; print('v123-import-ok')"
+
+      - name: Sourcing regression
+        shell: pwsh
+        run: |
+          @'
+          from browser_cdp_v123 import unwrap_search_url
+          from sourcing_v123 import keyword_converter, marketplace_query_planner
+          u=unwrap_search_url('https://www.google.com/url?q=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dabc&sa=U')
+          assert u.startswith('https://www.youtube.com/watch?v=abc'), u
+          p={'title':'테스트브랜드 IRT6030 스마트 온도계','brand':'테스트브랜드','model':'IRT6030'}
+          q=keyword_converter(p,'')
+          assert len(q)==7
+          assert all(any('IRT6030' in x for x in qs) for qs in q.values())
+          assert any('测评' in x or '开箱' in x for x in q['Douyin'])
+          plan=marketplace_query_planner(p,'',['TikTok','Douyin'])
+          assert set(plan)=={'TikTok','Douyin'}
+          print('v123-sourcing-regression-ok')
+          '@ | Set-Content .\sourcing_v123_test.py -Encoding UTF8
+          python .\sourcing_v123_test.py
+
+      - name: Browser extension regression
+        shell: pwsh
+        run: |
+          @'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('browser-extension/manifest.json').read_text(encoding='utf-8'))
+          assert m['version']=='1.23.0'
+          js=Path('browser-extension/service_worker.js').read_text(encoding='utf-8')
+          for token in ['MAX_ACTIVE=2','waitAndCollect','unwrapUrl','login_required','/v1/pair']:
+              assert token in js, token
+          print('v123-extension-regression-ok')
+          '@ | Set-Content .\ext_v123_test.py -Encoding UTF8
+          python .\ext_v123_test.py
+
+      - name: UI wiring smoke test
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          @'
+          from PySide6.QtWidgets import QApplication
+          import main_v123
+          app=QApplication([])
+          w=main_v123.Nova(); w.show(); app.processEvents()
+          assert 'v1.23' in w.windowTitle()
+          assert len(w.mode_buttons121)==4
+          assert len(w.pchecks)==7
+          assert w._start_product_source121.__func__.__module__=='main_v123'
+          assert w._sourcing_ready122.__func__.__module__=='main_v123'
+          assert w.bridge_collect.__func__.__module__=='main_v123'
+          for size in [(1600,930),(1440,900),(1280,720)]:
+              w.resize(*size); w.go(0); app.processEvents(); assert w.home_make121.isVisible()
+          w.close(); print('v123-ui-ok')
+          '@ | Set-Content .\ui_v123_test.py -Encoding UTF8
+          python .\ui_v123_test.py
+
+      - name: Acquire FFmpeg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          curl.exe -L --fail --retry 5 --retry-delay 3 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -o '.\ffmpeg_bundle.zip'
+          Expand-Archive '.\ffmpeg_bundle.zip' -DestinationPath '.\ffmpeg_bundle' -Force
+          $ffmpeg=Get-ChildItem '.\ffmpeg_bundle' -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          $ffprobe=Get-ChildItem '.\ffmpeg_bundle' -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if(-not $ffmpeg -or -not $ffprobe){throw 'FFmpeg tools missing'}
+          Copy-Item $ffmpeg.FullName '.\ffmpeg.exe' -Force
+          Copy-Item $ffprobe.FullName '.\ffprobe.exe' -Force
+
+      - name: Install Tesseract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $ok=$false
+          for($i=1;$i -le 3;$i++){
+            choco install tesseract --yes --no-progress
+            if(Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe'){$ok=$true;break}
+            Start-Sleep -Seconds (3*$i)
+          }
+          if(-not $ok){throw 'Tesseract install failed'}
+
+      - name: Bundle Whisper base model
+        shell: pwsh
+        run: |
+          @'
+          from huggingface_hub import snapshot_download
+          from pathlib import Path
+          out=Path('models/whisper-base'); out.mkdir(parents=True,exist_ok=True)
+          snapshot_download('Systran/faster-whisper-base',local_dir=str(out),allow_patterns=['config.json','model.bin','tokenizer.json','vocabulary.*','preprocessor_config.json'])
+          assert (out/'model.bin').exists()
+          '@ | Set-Content .\download_model.py -Encoding UTF8
+          python .\download_model.py
+
+      - name: Build application
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts `
+            --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib `
+            --collect-all PySide6.QtSvg --collect-all PIL --collect-all faster_whisper --collect-all ctranslate2 `
+            --collect-all av --collect-all tokenizers --collect-all cv2 --collect-all websocket --collect-all keyring `
+            --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import google.oauth2.credentials `
+            --hidden-import keyring.backends.Windows `
+            --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg `
+            main_v123.py
+          Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
+          Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
+          Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
+          Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
+          Copy-Item '.\models' '.\dist\NovaShorts\models' -Recurse -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.23.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\SSMAKER_PARITY_v1.23.md' '.\dist\NovaShorts\SSMaker_기능대응표_v1.23.md' -Force
+          Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
+          $td='.\dist\NovaShorts\tesseract\tessdata'; New-Item -ItemType Directory -Force -Path $td | Out-Null
+          curl.exe -L --fail --retry 4 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/kor.traineddata' -o "$td\kor.traineddata"
+          curl.exe -L --fail --retry 4 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/chi_sim.traineddata' -o "$td\chi_sim.traineddata"
+          @'
+          @echo off
+          cd /d "%~dp0"
+          start "" "NovaShorts.exe"
+          '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
+          @'
+          NovaShorts v1.23
+          영상 수집 0건과 실제 유사도 미달을 분리했습니다.
+          플랫폼별 수집 건수와 로그인/차단/결과없음 상태를 표시합니다.
+          검색 페이지 적응형 대기, 검색어 재시도, Google redirect 복원, 동시 검색 2개 제한을 적용했습니다.
+          '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
+
+      - name: Smoke test package
+        shell: pwsh
+        run: |
+          $required=@(
+            '.\dist\NovaShorts\NovaShorts.exe',
+            '.\dist\NovaShorts\ffmpeg.exe',
+            '.\dist\NovaShorts\ffprobe.exe',
+            '.\dist\NovaShorts\models\whisper-base\model.bin',
+            '.\dist\NovaShorts\browser-extension\service_worker.js',
+            '.\dist\NovaShorts\NovaShorts_사용설명서.txt',
+            '.\dist\NovaShorts\SSMaker_기능대응표_v1.23.md'
+          )
+          foreach($p in $required){if(!(Test-Path $p)){throw "package missing: $p"}}
+
+      - name: Upload direct package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaShorts_v1.23_DIRECT
+          path: dist/NovaShorts/*
+          if-no-files-found: error
+          retention-days: 30
