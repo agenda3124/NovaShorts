@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "NovaShorts Bridge",
-  "version": "1.22.0",
-  "description": "Pairs automatically with the local NovaShorts app and collects public product/video metadata.",
+  "version": "1.23.0",
+  "description": "Pairs automatically with NovaShorts and performs adaptive public product/video result collection.",
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "http://127.0.0.1:38471/*",
@@ -15,7 +15,8 @@
     "https://*.youtube.com/*",
     "https://youtu.be/*",
     "https://*.instagram.com/*",
-    "https://*.1688.com/*"
+    "https://*.1688.com/*",
+    "https://*.google.com/*"
   ],
   "background": {"service_worker": "service_worker.js"},
   "action": {"default_popup": "popup.html", "default_title": "NovaShorts Bridge"}
