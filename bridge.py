@@ -7,7 +7,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Empty, Queue
 
-from engine import load_settings, log
+from engine import HOME, load_settings, log
 
 HOST = '127.0.0.1'
 PORT = 38471
@@ -44,20 +44,16 @@ def _take_backlog(task_ids: set[str]) -> list[dict]:
 
 
 def wait_for_results(task_ids, timeout: float = 45.0) -> list[dict]:
-    """Wait only for the requested bridge task ids without stealing other jobs' results."""
     pending = {str(x) for x in task_ids if x}
     if not pending:
         return []
     out = []
     end = time.time() + max(0.5, float(timeout))
-
-    cached = _take_backlog(pending)
-    for item in cached:
+    for item in _take_backlog(pending):
         tid = _task_id(item)
         if tid in pending:
             pending.discard(tid)
             out.append(item)
-
     while pending and time.time() < end:
         try:
             item = RESULTS.get(timeout=min(0.6, max(0.05, end - time.time())))
@@ -77,6 +73,17 @@ def wait_for_results(task_ids, timeout: float = 45.0) -> list[dict]:
 def wait_for_result(task_id: str, timeout: float = 30.0) -> dict | None:
     rows = wait_for_results([task_id], timeout)
     return rows[0] if rows else None
+
+
+def _write_pairing_state():
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+        (HOME / 'chrome_extension_pairing.json').write_text(
+            json.dumps({'paired': True, 'port': PORT, 'updated_at': time.time(), 'version': '1.22'}, ensure_ascii=False, indent=2),
+            encoding='utf-8'
+        )
+    except Exception as e:
+        log('pairing state: ' + str(e))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -103,7 +110,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         global _LAST_EXTENSION_POLL
         if self.path == '/v1/status':
-            return self._send(200, {'ok': True, 'service': 'NovaShorts Bridge', 'port': PORT, 'extension_recent': extension_recent()})
+            return self._send(200, {'ok': True, 'service': 'NovaShorts Bridge', 'port': PORT, 'extension_recent': extension_recent(), 'version': '1.22'})
+        if self.path == '/v1/pair':
+            # The server is bound to 127.0.0.1 only. This token authorizes only this local bridge.
+            s = load_settings()
+            _write_pairing_state()
+            return self._send(200, {'ok': True, 'bridgeToken': s.bridge_token, 'port': PORT, 'version': '1.22'})
         if not self._ok():
             return self._send(401, {'ok': False, 'error': 'unauthorized'})
         if self.path == '/v1/tasks':
