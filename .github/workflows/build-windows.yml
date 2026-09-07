@@ -35,58 +35,86 @@ jobs:
       - name: Syntax and import check
         shell: pwsh
         run: |
-          python -m py_compile engine.py engine_v112.py bridge.py browser_cdp.py product_source.py features.py pipeline_v120.py pipeline_v121.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py main_v120.py main_v121.py
-          python -c "import main_v121, pipeline_v121, browser_cdp, engine_v112, cv2, faster_whisper, websocket; assert len(engine_v112.PLATFORMS)==7; print('import-v121-ok')"
+          python -m py_compile engine.py engine_v112.py bridge.py browser_cdp.py browser_cdp_v122.py product_source.py sourcing_v122.py features.py parity_v122.py pipeline_v120.py pipeline_v121.py pipeline_v122.py main_v18.py main_v19.py main_v112.py main_v113.py main_v114.py main_v115.py main_v116.py main_v117.py main_v118.py main_v119.py main_v120.py main_v121.py main_v122.py
+          python -c "import main_v122, pipeline_v122, parity_v122, sourcing_v122, browser_cdp_v122, engine_v112, cv2, faster_whisper, websocket, keyring; assert len(engine_v112.PLATFORMS)==7; print('import-v122-ok')"
 
-      - name: Product and pipeline regression
+      - name: Full SSMaker parity map regression
         shell: pwsh
         run: |
           @'
-          from engine import Settings
+          from engine import Settings, PLATFORMS
+          from parity_v122 import PARITY_MAP
+          from sourcing_v122 import keyword_converter, marketplace_query_planner
+          expected = {
+            'core.providers','core.audio.pipeline',
+            'core.sourcing.coupang_scraper','core.sourcing.keyword_converter','core.sourcing.marketplace_query_planner',
+            'core.sourcing.pipeline','core.sourcing.platform_pipeline','core.sourcing.platform_shorts_searcher',
+            'core.sourcing.platform_video_collector','core.sourcing.product_searcher',
+            'core.video.CreateFinalVideo','core.video.reeditor','core.video.render_integrity','core.video.video_validator',
+            'core.video.batch.analysis','core.video.batch.encoder','core.video.batch.processor','core.video.batch.subtitle_handler',
+            'core.video.batch.tts_generator','core.video.batch.tts_speed','core.video.batch.utils','core.video.batch.whisper_analyzer',
+            'processors.subtitle_detector','processors.subtitle_processor','processors.tts_processor','processors.video_composer',
+            'prompts.audio_analysis','prompts.subtitle_split','prompts.translation','prompts.video_analysis','prompts.video_validation',
+            'managers.settings_manager','ui.panels.settings_tab','ui.panels.upload_panel','browser-extension'
+          }
+          missing = sorted(expected - set(PARITY_MAP))
+          assert not missing, missing
+          assert len(PARITY_MAP) >= len(expected)
+          st = Settings()
+          assert len(PLATFORMS) == 7 and len(st.platform_sources) == 7
+          for attr in ['pipeline_video_analysis','pipeline_audio_analysis','pipeline_translate_source','pipeline_validate_output','pipeline_render_repair','pipeline_auto_tts_speed','pipeline_mix_sources','pipeline_semantic_validation']:
+              assert getattr(st, attr) is True, attr
+          profile={'title':'테스트브랜드 IRT6030 스마트 온도계','brand':'테스트브랜드','model':'IRT6030'}
+          plan=marketplace_query_planner(profile,'',list(PLATFORMS))
+          assert len(plan)==7
+          assert all(any('IRT6030' in q for q in qs) for qs in plan.values())
+          print('ssmaker-parity-map-ok', len(PARITY_MAP))
+          '@ | Set-Content .\parity_map_test.py -Encoding UTF8
+          python .\parity_map_test.py
+
+      - name: Product sourcing regression
+        shell: pwsh
+        run: |
+          @'
           from product_source import parse_product_html, search_seed, score_candidate
-          from pipeline_v120 import fallback_script, generate_publish_metadata
-          from pipeline_v121 import run_processing_pipeline_v121, merge_source_videos
-          import browser_cdp
-          html = '''
-          <html><head>
+          from sourcing_v122 import keyword_converter, product_searcher, platform_shorts_searcher
+          html = '''<html><head>
           <meta property="og:title" content="테스트브랜드 IRT6030 스마트 온도계 | 쿠팡">
           <meta property="og:image" content="https://img.example/p.jpg">
-          <script type="application/ld+json">
-          {"@context":"https://schema.org","@type":"Product","name":"테스트브랜드 IRT6030 스마트 온도계","brand":{"@type":"Brand","name":"테스트브랜드"},"model":"IRT6030","image":"https://img.example/p.jpg"}
-          </script></head></html>
-          '''
-          p = parse_product_html(html, 'https://www.coupang.com/vp/products/123456')
-          assert p['title'] == '테스트브랜드 IRT6030 스마트 온도계'
-          assert p['brand'] == '테스트브랜드'
-          assert p['model'] == 'IRT6030'
-          assert p['product_id'] == '123456'
+          <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"테스트브랜드 IRT6030 스마트 온도계","brand":{"@type":"Brand","name":"테스트브랜드"},"model":"IRT6030","image":"https://img.example/p.jpg"}</script>
+          </head></html>'''
+          p=parse_product_html(html,'https://www.coupang.com/vp/products/123456')
+          assert p['title']=='테스트브랜드 IRT6030 스마트 온도계'
+          assert p['brand']=='테스트브랜드' and p['model']=='IRT6030' and p['product_id']=='123456'
           assert 'IRT6030' in search_seed(p)
-          s = score_candidate(p, {'title':'IRT6030 스마트 온도계 사용 영상','url':'https://example.com/v'}, check_image=False)
-          assert s['_score'] >= 90
-          st = Settings()
-          assert st.pipeline_remove_subtitles and st.pipeline_auto_cut and st.pipeline_add_korean_subtitles
-          script = fallback_script(p, '사용 장면 테스트')
-          meta = generate_publish_metadata(p, script, '')
-          assert len(script) > 30 and meta['title'] and meta['description'] and meta['tags']
-          assert callable(run_processing_pipeline_v121) and callable(merge_source_videos)
-          assert callable(browser_cdp.analyze_product_page) and callable(browser_cdp.collect_links) and callable(browser_cdp.extract_media)
-          print('pipeline-v121-regression-ok')
-          '@ | Set-Content .\pipeline_test.py -Encoding UTF8
-          python .\pipeline_test.py
+          rows=[{'title':'IRT6030 스마트 온도계 실제 사용 영상','url':'https://example.com/v1','platform':'TikTok'}, {'title':'무관한 청소 영상','url':'https://example.com/v2','platform':'TikTok'}]
+          ranked=product_searcher(p,rows)
+          assert ranked and ranked[0]['url'].endswith('/v1') and ranked[0]['_score'] >= ranked[-1]['_score']
+          assert len(platform_shorts_searcher('TikTok','IRT6030'))==2
+          assert len(keyword_converter(p,''))==7
+          print('product-sourcing-v122-ok')
+          '@ | Set-Content .\sourcing_test.py -Encoding UTF8
+          python .\sourcing_test.py
 
-      - name: Browser and bridge regression
+      - name: Browser extension and pairing regression
         shell: pwsh
         run: |
           @'
           import json
           from pathlib import Path
-          import browser_cdp
-          assert browser_cdp.find_browser() is not None, 'Chrome/Edge should exist on windows-latest'
+          import browser_cdp_v122, bridge
+          assert browser_cdp_v122.find_browser() is not None, 'Chrome/Edge should exist on windows-latest'
           m=json.loads(Path('browser-extension/manifest.json').read_text(encoding='utf-8'))
+          assert m['version']=='1.22.0'
           hosts=' '.join(m['host_permissions'])
           for x in ['coupang.com','youtube.com','instagram.com','douyin.com','xiaohongshu.com','kuaishou.com','tiktok.com','1688.com']:
               assert x in hosts, x
-          print('browser-fallback-v121-ok')
+          js=Path('browser-extension/service_worker.js').read_text(encoding='utf-8')
+          assert '/v1/pair' in js and 'ensureToken' in js
+          src=Path('bridge.py').read_text(encoding='utf-8')
+          assert "'/v1/pair'" in src and 'chrome_extension_pairing.json' in src
+          assert callable(browser_cdp_v122.analyze_product_page) and callable(browser_cdp_v122.collect_links) and callable(browser_cdp_v122.extract_media)
+          print('browser-pairing-v122-ok')
           '@ | Set-Content .\browser_test.py -Encoding UTF8
           python .\browser_test.py
 
@@ -96,45 +124,34 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           @'
-          from PySide6.QtCore import QPoint, QRect
           from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
-          import main_v121
-
-          app = QApplication([])
-          w = main_v121.Nova()
-          w.show(); app.processEvents()
-          assert w.pages.count() == 8
-          assert 'v1.21' in w.windowTitle()
-          assert len(w.mode_buttons121) == 4
-          assert w.mode_stack121.count() == 4
-          assert w.home_make121.isVisible()
-          assert hasattr(w, 'home_product_url121')
-          assert hasattr(w, 'home_single_path121')
-          assert hasattr(w, 'home_multi_list121')
-          assert hasattr(w, 'home_ready_script121')
-          assert hasattr(w, 'right_scroll118') and isinstance(w.right_scroll118, QScrollArea)
-
+          import main_v122
+          app=QApplication([])
+          w=main_v122.Nova(); w.show(); app.processEvents()
+          assert w.pages.count()==8
+          assert 'v1.22' in w.windowTitle()
+          assert len(w.mode_buttons121)==4 and w.mode_stack121.count()==4
+          assert hasattr(w,'voice_preview_btn122')
+          assert hasattr(w,'parity_controls122') and len(w.parity_controls122)==9
+          assert w._start_pipeline_row120.__func__.__module__=='main_v122'
+          assert w.bridge_collect.__func__.__module__=='main_v122'
+          assert w.analyze_product_url119.__func__.__module__=='main_v122'
+          assert w._start_local_pipeline121.__func__.__module__=='main_v122'
+          status=w.parity_status122(); assert status['parity_count']>=35 and status['modes']==4 and status['platforms']==7
           for width,height in [(1600,930),(1440,900),(1280,720)]:
               w.resize(width,height); w.go(0); app.processEvents()
               assert w.home_make121.isVisible()
               for b in w.mode_buttons121: assert b.isVisible()
               w.go(1); app.processEvents()
-              quick = w.findChild(QFrame, 'quickCard118')
-              assert quick is not None and quick.isVisible()
-              for lab, ctl in w.quick_field_pairs + w.quick_toggle_pairs:
-                  assert lab.isVisible() and ctl.isVisible()
-                  assert not lab.geometry().intersects(ctl.geometry())
-
-          w.go(1); app.processEvents()
-          assert len(w.pchecks) == 7
-          assert w._start_pipeline_row120.__func__.__module__ == 'main_v121'
-          assert w.bridge_collect.__func__.__module__ == 'main_v121'
-          assert w.analyze_product_url119.__func__.__module__ == 'main_v121'
-
-          w.go(7); app.processEvents()
-          assert len(w.setting_pairs) == 8
-          assert len(w.pipeline_setting_pairs120) == 7
-          print('ui-feature-v121-ok')
+              assert len(w.pchecks)==7
+              quick=w.findChild(QFrame,'quickCard118'); assert quick is not None and quick.isVisible()
+              for lab,ctl in w.quick_field_pairs+w.quick_toggle_pairs:
+                  assert lab.isVisible() and ctl.isVisible() and not lab.geometry().intersects(ctl.geometry())
+              w.go(7); app.processEvents()
+              assert w.parity_card122 is not None
+              for lab,ctl in w.parity_setting_pairs122:
+                  assert lab.isVisible() and ctl.isVisible() and not lab.geometry().intersects(ctl.geometry())
+          print('ui-feature-v122-ok')
           w.close()
           '@ | Set-Content .\ui_test.py -Encoding UTF8
           python .\ui_test.py
@@ -152,6 +169,27 @@ jobs:
           if (-not $ffprobe) { throw 'ffprobe.exe not found in downloaded bundle' }
           Copy-Item $ffmpeg.FullName '.\ffmpeg.exe' -Force
           Copy-Item $ffprobe.FullName '.\ffprobe.exe' -Force
+
+      - name: Media reeditor and integrity regression
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import subprocess
+          from parity_v122 import video_validator, encoder, reeditor, render_integrity, subtitle_split
+          ff=str(Path('ffmpeg.exe').resolve())
+          def make(path,color,freq):
+              subprocess.run([ff,'-y','-f','lavfi','-i',f'color=c={color}:s=640x360:d=3:r=30','-f','lavfi','-i',f'sine=frequency={freq}:duration=3','-shortest','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac',path],check=True,capture_output=True)
+          make('a.mp4','blue',440); make('b.mp4','red',550)
+          assert video_validator('a.mp4',True)['ok']
+          encoder('a.mp4','norm.mp4'); assert video_validator('norm.mp4')['ok']
+          reeditor(['a.mp4','b.mp4'],'edit.mp4',4.0); assert video_validator('edit.mp4')['ok']
+          chk=render_integrity('a.mp4','repaired.mp4'); assert chk['ok'] and chk['repaired']
+          info=video_validator('repaired.mp4',True)['media']; assert info['width']==1080 and info['height']==1920
+          subtitle_split('첫 문장입니다. 두 번째 문장입니다. 세 번째 문장입니다.',4.0,'test.srt'); assert Path('test.srt').stat().st_size>20
+          print('media-parity-v122-ok')
+          '@ | Set-Content .\media_test.py -Encoding UTF8
+          python .\media_test.py
 
       - name: Install Tesseract
         shell: pwsh
@@ -171,8 +209,7 @@ jobs:
           @'
           from huggingface_hub import snapshot_download
           from pathlib import Path
-          out=Path('models/whisper-base')
-          out.mkdir(parents=True,exist_ok=True)
+          out=Path('models/whisper-base'); out.mkdir(parents=True,exist_ok=True)
           snapshot_download('Systran/faster-whisper-base', local_dir=str(out), allow_patterns=['config.json','model.bin','tokenizer.json','vocabulary.*','preprocessor_config.json'])
           assert (out/'model.bin').exists(), 'Whisper model.bin missing'
           print('whisper-model-bundled')
@@ -185,16 +222,18 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --onedir --name NovaShorts `
             --collect-all edge_tts --collect-all yt_dlp --collect-all googleapiclient --collect-all google_auth_oauthlib `
             --collect-all PySide6.QtSvg --collect-all PIL --collect-all faster_whisper --collect-all ctranslate2 `
-            --collect-all av --collect-all tokenizers --collect-all cv2 --collect-all websocket `
-            --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http `
+            --collect-all av --collect-all tokenizers --collect-all cv2 --collect-all websocket --collect-all keyring `
+            --hidden-import googleapiclient.discovery --hidden-import googleapiclient.http --hidden-import google.oauth2.credentials `
+            --hidden-import keyring.backends.Windows `
             --hidden-import PySide6.QtMultimedia --hidden-import PySide6.QtMultimediaWidgets --hidden-import PySide6.QtNetwork --hidden-import PySide6.QtSvg `
-            main_v121.py
+            main_v122.py
           Copy-Item '.\ffmpeg.exe' '.\dist\NovaShorts\ffmpeg.exe' -Force
           Copy-Item '.\ffprobe.exe' '.\dist\NovaShorts\ffprobe.exe' -Force
           Copy-Item '.\browser-extension' '.\dist\NovaShorts\browser-extension' -Recurse -Force
           Copy-Item '.\assets' '.\dist\NovaShorts\assets' -Recurse -Force
           Copy-Item '.\models' '.\dist\NovaShorts\models' -Recurse -Force
-          Copy-Item '.\NovaShorts_사용설명서_v1.21.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\NovaShorts_사용설명서_v1.22.txt' '.\dist\NovaShorts\NovaShorts_사용설명서.txt' -Force
+          Copy-Item '.\SSMAKER_PARITY_v1.22.md' '.\dist\NovaShorts\SSMaker_기능대응표_v1.22.md' -Force
           Copy-Item 'C:\Program Files\Tesseract-OCR' '.\dist\NovaShorts\tesseract' -Recurse -Force
           $td = '.\dist\NovaShorts\tesseract\tessdata'
           New-Item -ItemType Directory -Force -Path $td | Out-Null
@@ -206,13 +245,11 @@ jobs:
           start "" "NovaShorts.exe"
           '@ | Set-Content '.\dist\NovaShorts\START_NovaShorts.bat' -Encoding ASCII
           @'
-          NovaShorts v1.21
-          - 메인 화면을 상품 주소 / 영상 1개 / 여러 영상 / 준비한 자료의 4가지 제작 방식으로 전면 개편했습니다.
-          - 목소리 / 자막 / 편집 설정은 필요한 항목만 펼쳐서 바꿉니다.
-          - 상품 주소는 일반 요청이 403으로 막히면 Chrome/Edge CDP 브라우저를 자동 실행해 다시 분석합니다.
-          - Chrome Bridge 토큰은 기본 사용에 필요하지 않으며 기존 확장 프로그램은 보조 폴백으로만 남겨두었습니다.
-          - 여러 영상 병합, 준비 대본 사용, OCR, 스마트 자막 제거, Whisper, TTS, 자동 컷, 9:16 렌더, 한국어 자막, 썸네일을 실제 제작 파이프라인으로 연결했습니다.
-          - 완성 영상은 메인 화면에서 바로 재생하거나 결과 폴더를 열 수 있습니다.
+          NovaShorts v1.22
+          사용자가 제공한 SSMaker 설치 트리/실행 흔적/작동 영상을 전수 교차검증하여 확인된 기능 범주를 clean-room 방식으로 각각 구현하고 실제 제작 파이프라인에 연결했습니다.
+          상품주소/영상1개/여러영상/준비자료 → 분석 → 번역 → 자막처리 → 대본검증 → TTS 길이맞춤 → 다중소스 재편집 → 9:16 합성 → 무결성검증/복구 → 썸네일 → 선택적 업로드까지 연결됩니다.
+          Chrome Bridge는 로컬 자동 페어링되므로 토큰을 직접 복사하지 않습니다.
+          자세한 사용법은 NovaShorts_사용설명서.txt, 기능 대응 근거는 SSMaker_기능대응표_v1.22.md를 확인하세요.
           '@ | Set-Content '.\dist\NovaShorts\사용방법.txt' -Encoding UTF8
 
       - name: Smoke test package
@@ -227,15 +264,18 @@ jobs:
             '.\dist\NovaShorts\tesseract\tessdata\chi_sim.traineddata',
             '.\dist\NovaShorts\models\whisper-base\model.bin',
             '.\dist\NovaShorts\browser-extension\service_worker.js',
-            '.\dist\NovaShorts\NovaShorts_사용설명서.txt'
+            '.\dist\NovaShorts\NovaShorts_사용설명서.txt',
+            '.\dist\NovaShorts\SSMaker_기능대응표_v1.22.md'
           )
           foreach($p in $required){ if(!(Test-Path $p)){ throw "package missing: $p" } }
-          Get-ChildItem '.\dist\NovaShorts' | Select-Object -First 20
+          $manifest = Get-Content '.\dist\NovaShorts\browser-extension\manifest.json' -Raw | ConvertFrom-Json
+          if($manifest.version -ne '1.22.0'){ throw 'extension version mismatch' }
+          Get-ChildItem '.\dist\NovaShorts' | Select-Object -First 25
 
       - name: Upload direct package
         uses: actions/upload-artifact@v4
         with:
-          name: NovaShorts_v1.21_DIRECT
+          name: NovaShorts_v1.22_DIRECT
           path: dist/NovaShorts/*
           if-no-files-found: error
           retention-days: 30
