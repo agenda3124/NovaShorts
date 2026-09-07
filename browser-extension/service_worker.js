@@ -2,7 +2,19 @@ const API='http://127.0.0.1:38471';
 let activeJobs=0;
 const MAX_ACTIVE=4;
 
-async function token(){const x=await chrome.storage.local.get(['bridgeToken']);return x.bridgeToken||'';}
+async function ensureToken(){
+  const x=await chrome.storage.local.get(['bridgeToken']);
+  if(x.bridgeToken)return x.bridgeToken;
+  try{
+    const r=await fetch(API+'/v1/pair');
+    if(!r.ok)return '';
+    const d=await r.json();
+    const t=d.bridgeToken||'';
+    if(t)await chrome.storage.local.set({bridgeToken:t,pairedAt:Date.now(),bridgeVersion:d.version||''});
+    return t;
+  }catch(e){return '';}
+}
+async function token(){return ensureToken();}
 async function api(path,options={}){
   const t=await token();
   const headers=Object.assign({'Authorization':'Bearer '+t,'Content-Type':'application/json'},options.headers||{});
@@ -45,7 +57,7 @@ async function collect(task){
     }});
     const all=(injected[0]&&injected[0].result)||[];
     const rx=platformRegex(task.platform);const seen=new Set();
-    const results=all.filter(x=>rx.test(x.url)).filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true;}).slice(0,60).map(x=>({...x,platform:task.platform,keyword:task.keyword}));
+    const results=all.filter(x=>rx.test(x.url)).filter(x=>{if(seen.has(x.url))return false;seen.add(x.url);return true;}).slice(0,80).map(x=>({...x,platform:task.platform,keyword:task.keyword}));
     await api('/v1/results',{method:'POST',body:JSON.stringify({task,items:results})});
   }catch(e){
     await api('/v1/results',{method:'POST',body:JSON.stringify({task,items:[{url:task.url,title:'수집 오류: '+String(e),thumbnail:'',platform:task.platform,keyword:task.keyword,error:true}]})});
@@ -75,16 +87,12 @@ async function analyzeProduct(task){
       }
       const brand=product&&product.brand?(typeof product.brand==='object'?(product.brand.name||''):product.brand):'';
       const image=product&&product.image?(Array.isArray(product.image)?product.image[0]:product.image):'';
+      const visibleTitle=document.querySelector('h1')?.innerText||document.querySelector('[class*="product-title"]')?.innerText||'';
       return {
-        url:location.href,
-        pageTitle:document.title||'',
-        title:clean((product&&product.name)||meta('og:title')||document.title||''),
-        ogTitle:meta('og:title'),
-        image:clean(image||meta('og:image')||meta('twitter:image')),
-        ogImage:meta('og:image'),
-        brand:clean(brand),
-        model:clean((product&&(product.model||product.mpn))||''),
-        sku:clean((product&&product.sku)||''),
+        url:location.href,pageTitle:document.title||'',
+        title:clean((product&&product.name)||meta('og:title')||visibleTitle||document.title||''),
+        ogTitle:meta('og:title'),image:clean(image||meta('og:image')||meta('twitter:image')),ogImage:meta('og:image'),
+        brand:clean(brand),model:clean((product&&(product.model||product.mpn))||''),sku:clean((product&&product.sku)||''),
         description:clean((product&&product.description)||meta('og:description')||'')
       };
     }});
@@ -105,7 +113,7 @@ async function extractMedia(task){
       document.querySelectorAll('video source,source[type*="video"]').forEach(s=>add(s.src||s.getAttribute('src')));
       ['og:video','og:video:url','og:video:secure_url'].forEach(k=>add(document.querySelector(`meta[property="${k}"]`)?.content));
       try{performance.getEntriesByType('resource').forEach(e=>{if(/\.(mp4|m3u8|webm)(\?|$)/i.test(e.name)||/video/i.test(e.initiatorType||''))add(e.name);});}catch(e){}
-      const seen=new Set();return {title:document.title||'',url:location.href,media:out.filter(x=>!seen.has(x)&&seen.add(x)).slice(0,30)};
+      return {title:document.title||'',url:location.href,media:[...new Set(out)].slice(0,40)};
     }});
     const media=(injected[0]&&injected[0].result)||{};
     await api('/v1/results',{method:'POST',body:JSON.stringify({task,media})});
@@ -124,13 +132,11 @@ async function dispatch(task){
 
 async function poll(){
   try{
-    const t=await token();if(!t||activeJobs>=MAX_ACTIVE)return;
+    const t=await ensureToken();if(!t||activeJobs>=MAX_ACTIVE)return;
     const r=await api('/v1/tasks');
-    if(r&&r.task){
-      activeJobs++;
-      dispatch(r.task).catch(()=>{}).finally(()=>{activeJobs=Math.max(0,activeJobs-1);});
-    }
+    if(r&&r.task){activeJobs++;dispatch(r.task).catch(()=>{}).finally(()=>{activeJobs=Math.max(0,activeJobs-1);});}
   }catch(e){}
 }
 setInterval(poll,700);
-chrome.runtime.onInstalled.addListener(()=>poll());
+chrome.runtime.onInstalled.addListener(()=>{ensureToken().then(()=>poll());});
+chrome.runtime.onStartup.addListener(()=>{ensureToken().then(()=>poll());});
